@@ -68,7 +68,7 @@ func StatusStyle(status string) lipgloss.Style {
 		return base.Foreground(ColorYellow)
 	case "review":
 		return base.Foreground(ColorMagenta)
-	case "done":
+	case "done", "complete":
 		return base.Foreground(ColorGreen)
 	default:
 		return base.Foreground(ColorGray)
@@ -95,6 +95,26 @@ func PriorityStyle(priority int) lipgloss.Style {
 	}
 }
 
+// DimmedStyle is used for completed items — faint and struck-through.
+var DimmedStyle = lipgloss.NewStyle().
+	Faint(true).
+	Strikethrough(true)
+
+// OverdueStyle is used for the overdue indicator — red and bold.
+var OverdueStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(ColorRed)
+
+// LocalBadgeStyle is used for the "local" source badge on todos.
+var LocalBadgeStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(ColorGreen).
+	Padding(0, 1)
+
+// DueDateStyle is used for displaying due dates in a subtle color.
+var DueDateStyle = lipgloss.NewStyle().
+	Foreground(ColorGray)
+
 // SourceLabelStyle returns a color-coded style for the given source type label.
 func SourceLabelStyle(sourceType string) lipgloss.Style {
 	base := lipgloss.NewStyle().Bold(true).Padding(0, 1)
@@ -103,8 +123,10 @@ func SourceLabelStyle(sourceType string) lipgloss.Style {
 	case "jira":
 		return base.Foreground(ColorBlue)
 	case "bitbucket":
-		return base.Foreground(ColorBlue)
+		return base.Foreground(ColorOrange)
 	case "email":
+		return base.Foreground(ColorGreen)
+	case "local":
 		return base.Foreground(ColorGreen)
 	default:
 		return base.Foreground(ColorGray)

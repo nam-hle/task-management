@@ -17,7 +17,10 @@ import (
 	configview "github.com/nhle/task-management/internal/ui/config"
 	"github.com/nhle/task-management/internal/ui/detail"
 	helpview "github.com/nhle/task-management/internal/ui/help"
+	"github.com/nhle/task-management/internal/ui/projectmgr"
+	"github.com/nhle/task-management/internal/ui/tagmgr"
 	"github.com/nhle/task-management/internal/ui/tasklist"
+	"github.com/nhle/task-management/internal/ui/todoform"
 )
 
 // unreadCountMsg carries the number of unread notifications to the UI.
@@ -35,6 +38,10 @@ const (
 	ViewAI
 	ViewHelp
 	ViewCommand
+	ViewTodoCreate
+	ViewTodoEdit
+	ViewProjectList
+	ViewTagList
 )
 
 // Model is the root Bubble Tea model that manages view routing,
@@ -51,6 +58,9 @@ type Model struct {
 	commandView      command.Model
 	configView       configview.Model
 	aiView           aiview.Model
+	todoFormView     todoform.Model
+	projectView      projectmgr.Model
+	tagView          tagmgr.Model
 	poller           *appsync.Poller
 	ready            bool
 	unreadCount      int
@@ -72,10 +82,13 @@ func New(s *store.SQLiteStore) Model {
 		taskList:    tasklist.New(s, keys, 80, 24),
 		detail:      detail.New(s, keys, 80, 24),
 		helpView:    helpview.New(keys, 80, 24),
-		commandView: command.New(80, 24),
-		configView:  configview.New(s, keys, 80, 24),
-		aiView:      aiview.New(assistant, keys, 80, 24),
-		poller:      p,
+		commandView:  command.New(80, 24),
+		configView:   configview.New(s, keys, 80, 24),
+		aiView:       aiview.New(assistant, keys, 80, 24),
+		todoFormView: todoform.New(80, 24),
+		projectView:  projectmgr.New(s, keys, 80, 24),
+		tagView:      tagmgr.New(s, keys, 80, 24),
+		poller:       p,
 	}
 }
 
@@ -119,6 +132,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commandView.SetSize(contentWidth, contentHeight)
 		m.configView.SetSize(contentWidth, contentHeight)
 		m.aiView.SetSize(contentWidth, contentHeight)
+		m.todoFormView.SetSize(contentWidth, contentHeight)
+		m.projectView.SetSize(contentWidth, contentHeight)
+		m.tagView.SetSize(contentWidth, contentHeight)
 		// Forward to active view so huh forms can calculate their layout.
 		return m.updateActiveView(msg)
 
@@ -141,6 +157,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.authErrorMessage = ""
 		}
 
+		// Track stale sources for the list renderer.
+		src := string(msg.Source)
+		if msg.Error != nil || msg.AuthError != nil {
+			m.taskList.MarkSourceStale(src)
+		} else {
+			m.taskList.ClearSourceStale(src)
+		}
+
 		// After a sync completes, reload the task list and update
 		// the unread notification count.
 		cmd := m.taskList.LoadTasks()
@@ -156,8 +180,97 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.previousView = m.currentView
 		m.currentView = ViewDetail
 		m.detail.SetLoading(true)
-		// Load task detail from store
-		return m, m.loadTaskDetail(msg.TaskID)
+		m.detail.SetIsLocalTodo(false)
+		return m, tea.Batch(
+			m.loadTaskDetail(msg.TaskID),
+			m.loadLinksForItem(msg.TaskID, false),
+		)
+
+	case tasklist.SelectedTodoMsg:
+		m.previousView = m.currentView
+		m.currentView = ViewDetail
+		m.detail.SetLoading(true)
+		m.detail.SetIsLocalTodo(true)
+		return m, tea.Batch(
+			m.loadTodoDetail(msg.TodoID),
+			m.loadLinksForItem(msg.TodoID, true),
+		)
+
+	case todoform.TodoCreatedMsg:
+		m.currentView = ViewList
+		return m, m.createTodo(msg.Todo, msg.TagIDs)
+
+	case todoform.TodoUpdatedMsg:
+		m.currentView = ViewList
+		return m, m.updateTodo(msg.Todo, msg.TagIDs)
+
+	case todoform.TodoFormCancelMsg:
+		m.currentView = ViewList
+		return m, nil
+
+	case todoCreatedResultMsg:
+		return m, m.taskList.LoadItems()
+
+	case todoUpdatedResultMsg:
+		return m, m.taskList.LoadItems()
+
+	case todoDeletedResultMsg:
+		return m, m.taskList.LoadItems()
+
+	case todoDetailLoadedMsg:
+		m.detail.SetLoading(false)
+		if msg.detail != nil {
+			m.detail.SetTask(msg.detail)
+		}
+		return m, nil
+
+	case todoFormOptionsLoadedMsg:
+		m.todoFormView.SetOptions(msg.projects, msg.tags)
+		if m.currentView == ViewTodoCreate {
+			return m, m.todoFormView.StartCreate()
+		}
+		return m, nil
+
+	case todoEditReadyMsg:
+		return m, m.todoFormView.StartEdit(msg.todo)
+
+	case detail.LinkRequestMsg:
+		// User pressed l in detail view to link a todo to an external task
+		return m, m.loadAvailableTasksForLinking()
+
+	case detail.UnlinkRequestMsg:
+		// User pressed u in detail view to unlink
+		return m, m.deleteLink(msg.LinkID)
+
+	case detail.LinkCreatedResultMsg:
+		// Link created; reload links for the current item
+		var cmd tea.Cmd
+		m.detail, cmd = m.detail.Update(msg)
+		if m.detail.IsLocalTodo() {
+			return m, tea.Batch(cmd, m.loadLinksForItem(m.detail.CurrentItemID(), true))
+		}
+		return m, cmd
+
+	case detail.LinkDeletedResultMsg:
+		// Link deleted; reload links for the current item
+		if m.detail.IsLocalTodo() {
+			return m, m.loadLinksForItem(m.detail.CurrentItemID(), true)
+		}
+		return m, m.loadLinksForItem(m.detail.CurrentItemID(), false)
+
+	case detail.NavigateToLinkedItemMsg:
+		m.detail.SetLoading(true)
+		m.detail.SetIsLocalTodo(msg.IsLocal)
+		if msg.IsLocal {
+			return m, tea.Batch(
+				m.loadTodoDetail(msg.ItemID),
+				m.loadLinksForItem(msg.ItemID, true),
+			)
+		}
+		return m, tea.Batch(
+			m.loadTaskDetail(msg.ItemID),
+			m.loadLinksForItem(msg.ItemID, false),
+		)
 
 	case detail.DetailLoadedMsg:
 		var cmd tea.Cmd
@@ -211,6 +324,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, nil
+
+	case projectmgr.ProjectListCloseMsg:
+		m.currentView = ViewList
+		return m, nil
+
+	case projectmgr.ProjectChangedMsg:
+		return m, m.taskList.LoadItems()
+
+	case tagmgr.TagListCloseMsg:
+		m.currentView = ViewList
+		return m, nil
+
+	case tagmgr.TagChangedMsg:
+		return m, m.taskList.LoadItems()
 
 	case aiview.AINavigateTaskMsg:
 		m.previousView = m.currentView
@@ -274,7 +401,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			if m.currentView == ViewList {
 				m.poller.RefreshAll()
-				return m, m.taskList.LoadTasks()
+				return m, m.taskList.LoadItems()
+			}
+
+		case "n":
+			if m.currentView == ViewList {
+				m.previousView = m.currentView
+				m.currentView = ViewTodoCreate
+				return m, m.loadFormOptions()
+			}
+
+		case "e":
+			if m.currentView == ViewList {
+				item, ok := m.taskList.SelectedItem()
+				if ok && item.IsLocal() {
+					m.previousView = m.currentView
+					m.currentView = ViewTodoEdit
+					return m, tea.Batch(
+						m.loadFormOptions(),
+						m.startEditSelectedTodo(item.GetID()),
+					)
+				}
+			}
+
+		case "x":
+			if m.currentView == ViewList {
+				item, ok := m.taskList.SelectedItem()
+				if ok && item.IsLocal() {
+					return m, m.toggleTodoComplete(item)
+				}
+			}
+
+		case "d":
+			if m.currentView == ViewList {
+				item, ok := m.taskList.SelectedItem()
+				if ok && item.IsLocal() {
+					return m, m.deleteTodo(item.GetID())
+				}
+			}
+
+		case "H":
+			if m.currentView == ViewList {
+				return m, m.taskList.ToggleShowCompleted()
+			}
+
+		case "p":
+			if m.currentView == ViewList {
+				m.previousView = m.currentView
+				m.currentView = ViewProjectList
+				return m, m.projectView.Init()
+			}
+
+		case "t":
+			if m.currentView == ViewList {
+				m.previousView = m.currentView
+				m.currentView = ViewTagList
+				return m, m.tagView.Init()
 			}
 		}
 	}
@@ -300,6 +482,12 @@ func (m Model) updateActiveView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.helpView, cmd = m.helpView.Update(msg)
 	case ViewCommand:
 		m.commandView, cmd = m.commandView.Update(msg)
+	case ViewTodoCreate, ViewTodoEdit:
+		m.todoFormView, cmd = m.todoFormView.Update(msg)
+	case ViewProjectList:
+		m.projectView, cmd = m.projectView.Update(msg)
+	case ViewTagList:
+		m.tagView, cmd = m.tagView.Update(msg)
 	}
 
 	return m, cmd
@@ -337,6 +525,12 @@ func (m Model) renderContent() string {
 		return m.helpView.View()
 	case ViewCommand:
 		return m.commandView.View()
+	case ViewTodoCreate, ViewTodoEdit:
+		return m.todoFormView.View()
+	case ViewProjectList:
+		return m.projectView.View()
+	case ViewTagList:
+		return m.tagView.View()
 	default:
 		return ""
 	}
@@ -351,12 +545,14 @@ func (m Model) syncStatus() string {
 
 	running := 0
 	errCount := 0
+	var staleNames []string
 	for _, s := range statuses {
 		switch s.State {
 		case appsync.SyncRunning:
 			running++
 		case appsync.SyncError:
 			errCount++
+			staleNames = append(staleNames, string(s.SourceType))
 		}
 	}
 
@@ -364,9 +560,21 @@ func (m Model) syncStatus() string {
 		return fmt.Sprintf("syncing (%d)", running)
 	}
 	if errCount > 0 {
-		return fmt.Sprintf("errors (%d)", errCount)
+		return fmt.Sprintf("⚠ unreachable: %s", joinStaleNames(staleNames))
 	}
 	return "idle"
+}
+
+// joinStaleNames joins source names for display.
+func joinStaleNames(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	result := names[0]
+	for i := 1; i < len(names); i++ {
+		result += ", " + names[i]
+	}
+	return result
 }
 
 // keyHints returns keyboard shortcut hints for the status bar.
@@ -382,13 +590,23 @@ func (m Model) keyHints() string {
 	case ViewCommand:
 		return ": close command | enter execute | esc back"
 	case ViewDetail:
-		return "esc back | c comment | t transition | p approve | j/k scroll"
+		return "esc back | l link | u unlink | c comment | t transition | j/k scroll"
 	case ViewConfig:
 		return "a add | e edit | d delete | enter test | esc back"
 	case ViewAI:
 		return "enter send | esc close"
+	case ViewTodoCreate, ViewTodoEdit:
+		return "enter submit | esc cancel"
+	case ViewProjectList:
+		return "n new | e edit | a archive | d delete | esc back"
+	case ViewTagList:
+		return "n new | e edit | d delete | esc back"
 	default:
-		return "q quit | ? help | a AI | c config | : command | / search | tab sort | 1/2/3 filter"
+		filterSummary := m.taskList.FilterSummary()
+		if filterSummary != "" {
+			return filterSummary + " | 3 clear"
+		}
+		return "q quit | ? help | n new | / search | 1 source | 2 date | tab sort"
 	}
 }
 
@@ -427,7 +645,7 @@ func (m *Model) executeCommand(cmd string) tea.Cmd {
 	switch cmd {
 	case "refresh", "sync":
 		m.poller.RefreshAll()
-		return m.taskList.LoadTasks()
+		return m.taskList.LoadItems()
 	case "quit", "q":
 		m.poller.Stop()
 		return tea.Quit
@@ -435,6 +653,30 @@ func (m *Model) executeCommand(cmd string) tea.Cmd {
 		m.previousView = m.currentView
 		m.currentView = ViewConfig
 		return m.configView.Init()
+	case "new todo", "todo":
+		m.previousView = m.currentView
+		m.currentView = ViewTodoCreate
+		return m.loadFormOptions()
+	case "toggle completed", "hide completed":
+		return m.taskList.ToggleShowCompleted()
+	case "projects":
+		m.previousView = m.currentView
+		m.currentView = ViewProjectList
+		return m.projectView.Init()
+	case "tags":
+		m.previousView = m.currentView
+		m.currentView = ViewTagList
+		return m.tagView.Init()
+	case "filter today", "today":
+		return m.taskList.SetDateFilter("today")
+	case "filter upcoming", "upcoming":
+		return m.taskList.SetDateFilter("upcoming")
+	case "filter overdue", "overdue":
+		return m.taskList.SetDateFilter("overdue")
+	case "filter local", "local":
+		return m.taskList.SetSourceFilter("local")
+	case "clear filters", "clear":
+		return m.taskList.ClearFilters()
 	default:
 		return nil
 	}

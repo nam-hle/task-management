@@ -9,13 +9,17 @@ import (
 // Re-export theme styles so existing code that imports from app still works.
 // New code should import from the theme package directly.
 var (
-	HeaderStyle      = theme.HeaderStyle
-	StatusBarStyle   = theme.StatusBarStyle
-	DetailPanelStyle = theme.DetailPanelStyle
-	ListItemStyle    = theme.ListItemStyle
+	HeaderStyle       = theme.HeaderStyle
+	StatusBarStyle    = theme.StatusBarStyle
+	DetailPanelStyle  = theme.DetailPanelStyle
+	ListItemStyle     = theme.ListItemStyle
 	SelectedItemStyle = theme.SelectedItemStyle
-	HelpStyle        = theme.HelpStyle
-	BorderStyle      = theme.BorderStyle
+	HelpStyle         = theme.HelpStyle
+	BorderStyle       = theme.BorderStyle
+	DimmedStyle       = theme.DimmedStyle
+	OverdueStyle      = theme.OverdueStyle
+	LocalBadgeStyle   = theme.LocalBadgeStyle
+	DueDateStyle      = theme.DueDateStyle
 )
 
 // StatusStyle delegates to theme.StatusStyle.

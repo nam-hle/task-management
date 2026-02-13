@@ -42,6 +42,13 @@ type KeyMap struct {
 
 	// Sort
 	CycleSort key.Binding
+
+	// Todo-specific
+	NewTodo         key.Binding
+	EditTodo        key.Binding
+	ToggleComplete  key.Binding
+	DeleteTodo      key.Binding
+	ToggleCompleted key.Binding
 }
 
 // DefaultKeyMap returns the default set of keybindings.
@@ -85,15 +92,15 @@ func DefaultKeyMap() *KeyMap {
 		),
 		FilterJira: key.NewBinding(
 			key.WithKeys("1"),
-			key.WithHelp("1", "toggle jira"),
+			key.WithHelp("1", "cycle source filter"),
 		),
 		FilterBitbucket: key.NewBinding(
 			key.WithKeys("2"),
-			key.WithHelp("2", "toggle bitbucket"),
+			key.WithHelp("2", "cycle date filter"),
 		),
 		FilterEmail: key.NewBinding(
 			key.WithKeys("3"),
-			key.WithHelp("3", "toggle email"),
+			key.WithHelp("3", "clear filters"),
 		),
 		AI: key.NewBinding(
 			key.WithKeys("a"),
@@ -115,6 +122,26 @@ func DefaultKeyMap() *KeyMap {
 			key.WithKeys("tab"),
 			key.WithHelp("tab", "cycle sort"),
 		),
+		NewTodo: key.NewBinding(
+			key.WithKeys("n"),
+			key.WithHelp("n", "new todo"),
+		),
+		EditTodo: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "edit todo"),
+		),
+		ToggleComplete: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "toggle complete"),
+		),
+		DeleteTodo: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "delete todo"),
+		),
+		ToggleCompleted: key.NewBinding(
+			key.WithKeys("H"),
+			key.WithHelp("H", "hide/show completed"),
+		),
 	}
 }
 
@@ -130,9 +157,15 @@ func (k *KeyMap) ShortHelp() []key.Binding {
 // help view.
 func (k *KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
+		// Navigation
 		{k.Up, k.Down, k.Select, k.Back, k.Quit},
+		// Search & commands
 		{k.Search, k.Command, k.Help, k.Refresh},
+		// Filters & sort
 		{k.FilterJira, k.FilterBitbucket, k.FilterEmail, k.CycleSort},
-		{k.Comment, k.Transition, k.Approve, k.AI},
+		// Todo management
+		{k.NewTodo, k.EditTodo, k.ToggleComplete, k.DeleteTodo, k.ToggleCompleted},
+		// Detail actions
+		{k.Comment, k.Transition, k.AI},
 	}
 }
