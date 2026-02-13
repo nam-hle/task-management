@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"fmt"
 	gosync "sync"
 	"time"
 
@@ -31,14 +32,27 @@ type SyncStatus struct {
 
 // SyncResultMsg is a tea.Msg sent when a sync operation completes.
 type SyncResultMsg struct {
-	Tasks  []model.Task
-	Source model.SourceType
-	Error  error
+	Tasks        []model.Task
+	Source       model.SourceType
+	Error        error
+	AuthError    *AuthErrorMsg
+	NewTaskCount int
 }
 
 // SyncStatusMsg is a tea.Msg with the current statuses of all sources.
 type SyncStatusMsg struct {
 	Statuses []SyncStatus
+}
+
+// AuthErrorMsg is a tea.Msg sent when a source returns an authentication error.
+type AuthErrorMsg struct {
+	SourceType model.SourceType
+	Message    string
+}
+
+// NewTasksMsg is a tea.Msg sent when new tasks are detected during sync.
+type NewTasksMsg struct {
+	Count int
 }
 
 // fetchTimeout is the maximum time allowed for a single fetch operation.
@@ -203,11 +217,47 @@ func (p *Poller) fetchAndUpsert(entry sourceEntry, st model.SourceType) {
 
 	if err != nil {
 		p.setStatus(st, SyncError, err)
+
+		// Detect auth errors and emit a specific message.
+		if source.IsAuthError(err) {
+			p.sendResult(SyncResultMsg{
+				Source: st,
+				Error:  err,
+				AuthError: &AuthErrorMsg{
+					SourceType: st,
+					Message: fmt.Sprintf(
+						"%s: authentication expired. Press 'c' to reconfigure.",
+						st,
+					),
+				},
+			})
+			return
+		}
+
 		p.sendResult(SyncResultMsg{Source: st, Error: err})
 		return
 	}
 
 	tasks := result.Items
+
+	// Detect new tasks by checking which ones don't exist in the store yet.
+	var newTaskIDs map[string]bool
+	if len(tasks) > 0 {
+		existingTasks, _ := p.store.GetTasks(ctx, store.TaskFilter{
+			Limit: 1000,
+		})
+		existingIDs := make(map[string]bool, len(existingTasks))
+		for _, t := range existingTasks {
+			existingIDs[t.ID] = true
+		}
+		newTaskIDs = make(map[string]bool)
+		for _, t := range tasks {
+			if !existingIDs[t.ID] {
+				newTaskIDs[t.ID] = true
+			}
+		}
+	}
+
 	if len(tasks) > 0 {
 		if upsertErr := p.store.UpsertTasks(ctx, tasks); upsertErr != nil {
 			p.setStatus(st, SyncError, upsertErr)
@@ -216,8 +266,29 @@ func (p *Poller) fetchAndUpsert(entry sourceEntry, st model.SourceType) {
 		}
 	}
 
+	// Create notifications for new tasks only.
+	newTaskCount := len(newTaskIDs)
+	if newTaskCount > 0 {
+		for _, t := range tasks {
+			if !newTaskIDs[t.ID] {
+				continue
+			}
+			notification := model.Notification{
+				TaskID:     t.ID,
+				SourceType: model.SourceType(st),
+				Message:    fmt.Sprintf("New %s item: %s", st, t.Title),
+				CreatedAt:  time.Now(),
+			}
+			_ = p.store.CreateNotification(ctx, notification)
+		}
+	}
+
 	p.setStatus(st, SyncIdle, nil)
-	p.sendResult(SyncResultMsg{Tasks: tasks, Source: st})
+	p.sendResult(SyncResultMsg{
+		Tasks:        tasks,
+		Source:       st,
+		NewTaskCount: newTaskCount,
+	})
 }
 
 // setStatus updates the sync status for a source type.

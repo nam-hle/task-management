@@ -15,9 +15,13 @@ import (
 	"github.com/nhle/task-management/internal/theme"
 )
 
+// defaultPageSize is the number of tasks loaded per page.
+const defaultPageSize = 50
+
 // TasksLoadedMsg is sent when tasks have been loaded from the store.
 type TasksLoadedMsg struct {
-	Tasks []model.Task
+	Tasks  []model.Task
+	Append bool
 }
 
 // SelectedTaskMsg is sent when a user selects a task to view details.
@@ -46,6 +50,9 @@ type Model struct {
 	searchInput   textinput.Model
 	width         int
 	height        int
+	hasMore       bool
+	loadingMore   bool
+	currentOffset int
 }
 
 // New creates a new task list model.
@@ -88,11 +95,24 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case TasksLoadedMsg:
-		items := make([]list.Item, len(msg.Tasks))
+		newItems := make([]list.Item, len(msg.Tasks))
 		for i, task := range msg.Tasks {
-			items[i] = TaskItem{Task: task}
+			newItems[i] = TaskItem{Task: task}
 		}
-		cmd := m.list.SetItems(items)
+		if msg.Append {
+			// Append to existing items for pagination.
+			existing := m.list.Items()
+			combined := append(existing, newItems...)
+			cmd := m.list.SetItems(combined)
+			m.loadingMore = false
+			m.currentOffset = len(combined)
+			m.hasMore = len(msg.Tasks) >= defaultPageSize
+			return m, cmd
+		}
+		cmd := m.list.SetItems(newItems)
+		m.currentOffset = len(newItems)
+		m.hasMore = len(msg.Tasks) >= defaultPageSize
+		m.loadingMore = false
 		return m, cmd
 
 	case tea.KeyMsg:
@@ -171,6 +191,18 @@ func (m Model) handleNormalKeys(msg tea.KeyMsg) (Model, tea.Cmd) {
 	// Delegate to the list for navigation keys (up/down/pgup/pgdn)
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
+
+	// Check if user scrolled near the bottom to trigger loading more.
+	if m.hasMore && !m.loadingMore {
+		totalItems := len(m.list.Items())
+		cursorIdx := m.list.Index()
+		if totalItems > 0 && cursorIdx >= totalItems-3 {
+			m.loadingMore = true
+			loadMoreCmd := m.loadMoreTasks()
+			return m, tea.Batch(cmd, loadMoreCmd)
+		}
+	}
+
 	return m, cmd
 }
 
@@ -241,8 +273,13 @@ func (m Model) renderEmptyState() string {
 }
 
 // LoadTasks returns a tea.Cmd that queries the store with the current filter.
+// It resets pagination to the first page.
 func (m Model) LoadTasks() tea.Cmd {
 	filter := m.filter
+	if filter.Limit == 0 {
+		filter.Limit = defaultPageSize
+	}
+	filter.Offset = 0
 	s := m.store
 	return func() tea.Msg {
 		tasks, err := s.GetTasks(context.Background(), filter)
@@ -250,6 +287,23 @@ func (m Model) LoadTasks() tea.Cmd {
 			return TasksLoadedMsg{Tasks: nil}
 		}
 		return TasksLoadedMsg{Tasks: tasks}
+	}
+}
+
+// loadMoreTasks returns a tea.Cmd that loads the next page of tasks.
+func (m Model) loadMoreTasks() tea.Cmd {
+	filter := m.filter
+	if filter.Limit == 0 {
+		filter.Limit = defaultPageSize
+	}
+	filter.Offset = m.currentOffset
+	s := m.store
+	return func() tea.Msg {
+		tasks, err := s.GetTasks(context.Background(), filter)
+		if err != nil {
+			return TasksLoadedMsg{Tasks: nil, Append: true}
+		}
+		return TasksLoadedMsg{Tasks: tasks, Append: true}
 	}
 }
 

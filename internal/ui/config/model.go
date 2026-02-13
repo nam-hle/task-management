@@ -17,6 +17,8 @@ import (
 	"github.com/nhle/task-management/internal/keys"
 	"github.com/nhle/task-management/internal/model"
 	"github.com/nhle/task-management/internal/source"
+	"github.com/nhle/task-management/internal/source/bitbucket"
+	"github.com/nhle/task-management/internal/source/email"
 	"github.com/nhle/task-management/internal/source/jira"
 	"github.com/nhle/task-management/internal/store"
 	"github.com/nhle/task-management/internal/theme"
@@ -73,6 +75,26 @@ type sourceDeletedInternalMsg struct {
 	err error
 }
 
+// formBindings holds form field values on the heap so that huh's Value()
+// pointers remain valid across Bubble Tea model copies.
+type formBindings struct {
+	name    string
+	baseURL string
+	token   string
+	jql     string
+
+	imapHost string
+	imapPort string
+	smtpHost string
+	smtpPort string
+	username string
+	password string
+	tls      bool
+
+	selectedType  string
+	deleteConfirm bool
+}
+
 // Model is the Bubble Tea model for the source configuration UI.
 type Model struct {
 	mode          ConfigMode
@@ -88,22 +110,8 @@ type Model struct {
 	emailForm  *huh.Form
 	typeSelect *huh.Form
 
-	// Form field values (huh binds to these)
-	formName    string
-	formBaseURL string
-	formToken   string
-	formJQL     string
-
-	formIMAPHost string
-	formIMAPPort string
-	formSMTPHost string
-	formSMTPPort string
-	formUsername string
-	formPassword string
-	formTLS      bool
-
-	// Source type selection
-	selectedType string
+	// Heap-allocated form bindings (survives model copies)
+	fb *formBindings
 
 	// Validation
 	validating  bool
@@ -113,7 +121,6 @@ type Model struct {
 
 	// Delete confirmation
 	confirmDelete *huh.Form
-	deleteConfirm bool
 
 	// Status message for transient feedback
 	statusMsg string
@@ -132,6 +139,7 @@ func New(s store.Store, k *keys.KeyMap, width, height int) Model {
 		store:   s,
 		keys:    k,
 		spinner: sp,
+		fb:      &formBindings{tls: true},
 		width:   width,
 		height:  height,
 	}
@@ -148,7 +156,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		return m, nil
+		// Forward to active huh form so it can calculate its layout.
+		return m.updateActiveForm(msg)
 
 	case sourcesLoadedMsg:
 		if msg.err != nil {
@@ -249,7 +258,7 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.isNewSource = true
 		m.editingSource = nil
 		m.mode = ModeSelectType
-		m.selectedType = ""
+		m.fb.selectedType = ""
 		m.typeSelect = m.buildTypeSelectForm()
 		return m, m.typeSelect.Init()
 
@@ -266,14 +275,20 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if len(m.sources) == 0 {
 			return m, nil
 		}
-		m.deleteConfirm = false
+		m.fb.deleteConfirm = false
 		m.confirmDelete = m.buildDeleteConfirmForm()
 		m.mode = ModeConfirmDelete
 		return m, m.confirmDelete.Init()
 
 	case msg.String() == "enter":
 		if len(m.sources) == 0 {
-			return m, nil
+			// No sources yet — treat Enter like 'a' to add one.
+			m.isNewSource = true
+			m.editingSource = nil
+			m.mode = ModeSelectType
+			m.fb.selectedType = ""
+			m.typeSelect = m.buildTypeSelectForm()
+			return m, m.typeSelect.Init()
 		}
 		src := m.sources[m.selectedIdx]
 		m.mode = ModeValidating
@@ -355,9 +370,9 @@ func (m Model) buildTypeSelectForm() *huh.Form {
 					huh.NewOption("Bitbucket - Code review and pull requests", "bitbucket"),
 					huh.NewOption("Email - IMAP mailbox integration", "email"),
 				).
-				Value(&m.selectedType),
+				Value(&m.fb.selectedType),
 		),
-	).WithWidth(m.formWidth())
+	).WithWidth(m.formWidth()).WithHeight(m.formHeight()).WithHeight(m.formHeight())
 }
 
 func (m Model) updateTypeSelect(msg tea.Msg) (Model, tea.Cmd) {
@@ -384,7 +399,7 @@ func (m Model) updateTypeSelect(msg tea.Msg) (Model, tea.Cmd) {
 func (m Model) handleTypeSelected() (Model, tea.Cmd) {
 	m.resetFormFields()
 
-	switch m.selectedType {
+	switch m.fb.selectedType {
 	case "jira":
 		m.mode = ModeFormJira
 		m.jiraForm = m.buildJiraForm()
@@ -412,27 +427,27 @@ func (m *Model) buildJiraForm() *huh.Form {
 				Title("Name").
 				Description("A label for this Jira instance").
 				Placeholder("My Jira").
-				Value(&m.formName).
+				Value(&m.fb.name).
 				Validate(validateRequired("Name")),
 			huh.NewInput().
 				Title("Base URL").
 				Description("Jira server URL (e.g., https://jira.example.com)").
 				Placeholder("https://jira.example.com").
-				Value(&m.formBaseURL).
+				Value(&m.fb.baseURL).
 				Validate(validateURL),
 			huh.NewInput().
 				Title("Personal Access Token").
 				Description("Your Jira PAT for authentication").
 				EchoMode(huh.EchoModePassword).
-				Value(&m.formToken).
+				Value(&m.fb.token).
 				Validate(validateRequired("Token")),
 			huh.NewInput().
 				Title("Default JQL").
 				Description("Optional custom JQL filter").
 				Placeholder("assignee=currentUser() AND resolution=Unresolved").
-				Value(&m.formJQL),
+				Value(&m.fb.jql),
 		),
-	).WithWidth(m.formWidth())
+	).WithWidth(m.formWidth()).WithHeight(m.formHeight()).WithHeight(m.formHeight())
 }
 
 func (m Model) updateJiraForm(msg tea.Msg) (Model, tea.Cmd) {
@@ -458,16 +473,16 @@ func (m Model) updateJiraForm(msg tea.Msg) (Model, tea.Cmd) {
 
 func (m Model) saveJiraSource() (Model, tea.Cmd) {
 	src := m.buildSourceConfig("jira")
-	if m.formJQL != "" {
+	if m.fb.jql != "" {
 		if src.Config == nil {
 			src.Config = make(map[string]string)
 		}
-		src.Config["jql"] = m.formJQL
+		src.Config["jql"] = m.fb.jql
 	}
 
 	// Store token in keyring
 	credKey := "jira-" + src.ID
-	if err := credential.Set(credKey, m.formToken); err != nil {
+	if err := credential.Set(credKey, m.fb.token); err != nil {
 		m.statusMsg = fmt.Sprintf("Error saving credential: %v", err)
 		m.mode = ModeList
 		return m, nil
@@ -496,22 +511,22 @@ func (m *Model) buildBBForm() *huh.Form {
 				Title("Name").
 				Description("A label for this Bitbucket instance").
 				Placeholder("My Bitbucket").
-				Value(&m.formName).
+				Value(&m.fb.name).
 				Validate(validateRequired("Name")),
 			huh.NewInput().
 				Title("Base URL").
 				Description("Bitbucket server URL (e.g., https://bitbucket.example.com)").
 				Placeholder("https://bitbucket.example.com").
-				Value(&m.formBaseURL).
+				Value(&m.fb.baseURL).
 				Validate(validateURL),
 			huh.NewInput().
 				Title("Personal Access Token").
 				Description("Your Bitbucket PAT for authentication").
 				EchoMode(huh.EchoModePassword).
-				Value(&m.formToken).
+				Value(&m.fb.token).
 				Validate(validateRequired("Token")),
 		),
-	).WithWidth(m.formWidth())
+	).WithWidth(m.formWidth()).WithHeight(m.formHeight())
 }
 
 func (m Model) updateBBForm(msg tea.Msg) (Model, tea.Cmd) {
@@ -539,7 +554,7 @@ func (m Model) saveBBSource() (Model, tea.Cmd) {
 	src := m.buildSourceConfig("bitbucket")
 
 	credKey := "bitbucket-" + src.ID
-	if err := credential.Set(credKey, m.formToken); err != nil {
+	if err := credential.Set(credKey, m.fb.token); err != nil {
 		m.statusMsg = fmt.Sprintf("Error saving credential: %v", err)
 		m.mode = ModeList
 		return m, nil
@@ -550,13 +565,18 @@ func (m Model) saveBBSource() (Model, tea.Cmd) {
 	}
 	src.Config["token_ref"] = "keyring:" + credKey
 
-	return m, m.saveSource(src)
+	m.mode = ModeValidating
+	m.validating = true
+	return m, tea.Batch(
+		m.spinner.Tick,
+		m.validateAndSave(src),
+	)
 }
 
 // --- Email Form (T039) ---
 
 func (m *Model) buildEmailForm() *huh.Form {
-	m.formTLS = true // Default TLS on
+	m.fb.tls = true // Default TLS on
 
 	return huh.NewForm(
 		huh.NewGroup(
@@ -564,52 +584,52 @@ func (m *Model) buildEmailForm() *huh.Form {
 				Title("Name").
 				Description("A label for this email source").
 				Placeholder("Work Email").
-				Value(&m.formName).
+				Value(&m.fb.name).
 				Validate(validateRequired("Name")),
 			huh.NewInput().
 				Title("IMAP Host").
 				Description("IMAP server hostname").
 				Placeholder("imap.example.com").
-				Value(&m.formIMAPHost).
+				Value(&m.fb.imapHost).
 				Validate(validateRequired("IMAP Host")),
 			huh.NewInput().
 				Title("IMAP Port").
 				Description("IMAP server port (e.g., 993)").
 				Placeholder("993").
-				Value(&m.formIMAPPort).
+				Value(&m.fb.imapPort).
 				Validate(validatePort),
 			huh.NewInput().
 				Title("SMTP Host").
 				Description("SMTP server hostname").
 				Placeholder("smtp.example.com").
-				Value(&m.formSMTPHost).
+				Value(&m.fb.smtpHost).
 				Validate(validateRequired("SMTP Host")),
 			huh.NewInput().
 				Title("SMTP Port").
 				Description("SMTP server port (e.g., 587)").
 				Placeholder("587").
-				Value(&m.formSMTPPort).
+				Value(&m.fb.smtpPort).
 				Validate(validatePort),
 			huh.NewInput().
 				Title("Username").
 				Description("Email account username").
 				Placeholder("user@example.com").
-				Value(&m.formUsername).
+				Value(&m.fb.username).
 				Validate(validateRequired("Username")),
 			huh.NewInput().
 				Title("Password").
 				Description("Email account password or app password").
 				EchoMode(huh.EchoModePassword).
-				Value(&m.formPassword).
+				Value(&m.fb.password).
 				Validate(validateRequired("Password")),
 			huh.NewConfirm().
 				Title("Use TLS").
 				Description("Enable TLS encryption for connections").
 				Affirmative("Yes").
 				Negative("No").
-				Value(&m.formTLS),
+				Value(&m.fb.tls),
 		),
-	).WithWidth(m.formWidth())
+	).WithWidth(m.formWidth()).WithHeight(m.formHeight())
 }
 
 func (m Model) updateEmailForm(msg tea.Msg) (Model, tea.Cmd) {
@@ -636,16 +656,16 @@ func (m Model) updateEmailForm(msg tea.Msg) (Model, tea.Cmd) {
 func (m Model) saveEmailSource() (Model, tea.Cmd) {
 	src := m.buildSourceConfig("email")
 	src.Config = map[string]string{
-		"imap_host": m.formIMAPHost,
-		"imap_port": m.formIMAPPort,
-		"smtp_host": m.formSMTPHost,
-		"smtp_port": m.formSMTPPort,
-		"username":  m.formUsername,
-		"tls":       fmt.Sprintf("%t", m.formTLS),
+		"imap_host": m.fb.imapHost,
+		"imap_port": m.fb.imapPort,
+		"smtp_host": m.fb.smtpHost,
+		"smtp_port": m.fb.smtpPort,
+		"username":  m.fb.username,
+		"tls":       fmt.Sprintf("%t", m.fb.tls),
 	}
 
 	credKey := "email-" + src.ID
-	if err := credential.Set(credKey, m.formPassword); err != nil {
+	if err := credential.Set(credKey, m.fb.password); err != nil {
 		m.statusMsg = fmt.Sprintf("Error saving credential: %v", err)
 		m.mode = ModeList
 		return m, nil
@@ -673,9 +693,9 @@ func (m *Model) buildDeleteConfirmForm() *huh.Form {
 				).
 				Affirmative("Yes, delete").
 				Negative("Cancel").
-				Value(&m.deleteConfirm),
+				Value(&m.fb.deleteConfirm),
 		),
-	).WithWidth(m.formWidth())
+	).WithWidth(m.formWidth()).WithHeight(m.formHeight())
 }
 
 func (m Model) updateConfirmDelete(msg tea.Msg) (Model, tea.Cmd) {
@@ -689,7 +709,7 @@ func (m Model) updateConfirmDelete(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	if m.confirmDelete.State == huh.StateCompleted {
-		if m.deleteConfirm {
+		if m.fb.deleteConfirm {
 			src := m.sources[m.selectedIdx]
 			return m, m.deleteSource(src)
 		}
@@ -813,8 +833,6 @@ func (m Model) viewForm(f *huh.Form) string {
 
 	return lipgloss.NewStyle().
 		Padding(1, 2).
-		Width(m.width).
-		Height(m.height).
 		Render(content)
 }
 
@@ -872,6 +890,7 @@ func (m *Model) SetSize(width, height int) {
 	m.height = height
 }
 
+
 func (m Model) formWidth() int {
 	w := m.width - 4
 	if w < 40 {
@@ -883,38 +902,46 @@ func (m Model) formWidth() int {
 	return w
 }
 
+func (m Model) formHeight() int {
+	h := m.height - 4
+	if h < 10 {
+		h = 10
+	}
+	return h
+}
+
 func (m *Model) resetFormFields() {
-	m.formName = ""
-	m.formBaseURL = ""
-	m.formToken = ""
-	m.formJQL = ""
-	m.formIMAPHost = ""
-	m.formIMAPPort = ""
-	m.formSMTPHost = ""
-	m.formSMTPPort = ""
-	m.formUsername = ""
-	m.formPassword = ""
-	m.formTLS = true
+	m.fb.name = ""
+	m.fb.baseURL = ""
+	m.fb.token = ""
+	m.fb.jql = ""
+	m.fb.imapHost = ""
+	m.fb.imapPort = ""
+	m.fb.smtpHost = ""
+	m.fb.smtpPort = ""
+	m.fb.username = ""
+	m.fb.password = ""
+	m.fb.tls = true
 }
 
 func (m Model) startEditForm(src model.SourceConfig) tea.Cmd {
-	m.formName = src.Name
-	m.formBaseURL = src.BaseURL
-	m.formToken = "" // Never pre-fill credentials
+	m.fb.name = src.Name
+	m.fb.baseURL = src.BaseURL
+	m.fb.token = "" // Never pre-fill credentials
 
 	if src.Config != nil {
-		m.formJQL = src.Config["jql"]
-		m.formIMAPHost = src.Config["imap_host"]
-		m.formIMAPPort = src.Config["imap_port"]
-		m.formSMTPHost = src.Config["smtp_host"]
-		m.formSMTPPort = src.Config["smtp_port"]
-		m.formUsername = src.Config["username"]
+		m.fb.jql = src.Config["jql"]
+		m.fb.imapHost = src.Config["imap_host"]
+		m.fb.imapPort = src.Config["imap_port"]
+		m.fb.smtpHost = src.Config["smtp_host"]
+		m.fb.smtpPort = src.Config["smtp_port"]
+		m.fb.username = src.Config["username"]
 		if src.Config["tls"] == "true" {
-			m.formTLS = true
+			m.fb.tls = true
 		} else if src.Config["tls"] == "false" {
-			m.formTLS = false
+			m.fb.tls = false
 		} else {
-			m.formTLS = true
+			m.fb.tls = true
 		}
 	}
 
@@ -939,8 +966,8 @@ func (m Model) startEditForm(src model.SourceConfig) tea.Cmd {
 func (m Model) buildSourceConfig(sourceType string) model.SourceConfig {
 	src := model.SourceConfig{
 		Type:            sourceType,
-		Name:            m.formName,
-		BaseURL:         m.formBaseURL,
+		Name:            m.fb.name,
+		BaseURL:         m.fb.baseURL,
 		Enabled:         true,
 		PollIntervalSec: 120,
 		Config:          make(map[string]string),
@@ -1047,8 +1074,37 @@ func (m Model) createAdapter(src model.SourceConfig) (source.Source, error) {
 		}
 		return jira.NewAdapter(src.BaseURL, token, src.ID, jql), nil
 
+	case "bitbucket":
+		token, err := credential.Get("bitbucket-" + src.ID)
+		if err != nil {
+			return nil, fmt.Errorf("credential not found: %w", err)
+		}
+		return bitbucket.NewAdapter(
+			src.BaseURL, token, src.ID,
+		), nil
+
+	case "email":
+		password, err := credential.Get("email-" + src.ID)
+		if err != nil {
+			return nil, fmt.Errorf("credential not found: %w", err)
+		}
+		cfg := src.Config
+		if cfg == nil {
+			return nil, fmt.Errorf("missing email config")
+		}
+		useTLS := cfg["tls"] != "false"
+		return email.NewAdapter(
+			cfg["imap_host"], cfg["imap_port"],
+			cfg["smtp_host"], cfg["smtp_port"],
+			cfg["username"], password,
+			useTLS,
+			src.ID,
+		), nil
+
 	default:
-		return nil, fmt.Errorf("validation not yet supported for %s sources", src.Type)
+		return nil, fmt.Errorf(
+			"validation not yet supported for %s sources", src.Type,
+		)
 	}
 }
 

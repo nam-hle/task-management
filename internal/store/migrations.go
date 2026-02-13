@@ -67,4 +67,16 @@ CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at
 INSERT INTO schema_version (version) VALUES (1);
 `,
 	},
+	{
+		version: 2,
+		sql: `
+CREATE INDEX IF NOT EXISTS idx_tasks_source_type_updated
+	ON tasks(source_type, updated_at);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_task_id
+	ON notifications(task_id);
+
+INSERT INTO schema_version (version) VALUES (2);
+`,
+	},
 }

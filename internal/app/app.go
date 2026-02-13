@@ -3,18 +3,27 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	aiservice "github.com/nhle/task-management/internal/ai"
+	"github.com/nhle/task-management/internal/credential"
 	"github.com/nhle/task-management/internal/store"
 	appsync "github.com/nhle/task-management/internal/sync"
 	"github.com/nhle/task-management/internal/ui"
+	aiview "github.com/nhle/task-management/internal/ui/ai"
 	"github.com/nhle/task-management/internal/ui/command"
 	configview "github.com/nhle/task-management/internal/ui/config"
 	"github.com/nhle/task-management/internal/ui/detail"
 	helpview "github.com/nhle/task-management/internal/ui/help"
 	"github.com/nhle/task-management/internal/ui/tasklist"
 )
+
+// unreadCountMsg carries the number of unread notifications to the UI.
+type unreadCountMsg struct {
+	count int
+}
 
 // ViewState represents the current active view in the application.
 type ViewState int
@@ -31,24 +40,30 @@ const (
 // Model is the root Bubble Tea model that manages view routing,
 // layout, and access to the persistence layer.
 type Model struct {
-	currentView  ViewState
-	previousView ViewState
-	layout       ui.Layout
-	store        *store.SQLiteStore
-	keys         *KeyMap
-	taskList     tasklist.Model
-	detail       detail.Model
-	helpView     helpview.Model
-	commandView  command.Model
-	configView   configview.Model
-	poller       *appsync.Poller
-	ready        bool
+	currentView      ViewState
+	previousView     ViewState
+	layout           ui.Layout
+	store            *store.SQLiteStore
+	keys             *KeyMap
+	taskList         tasklist.Model
+	detail           detail.Model
+	helpView         helpview.Model
+	commandView      command.Model
+	configView       configview.Model
+	aiView           aiview.Model
+	poller           *appsync.Poller
+	ready            bool
+	unreadCount      int
+	authErrorMessage string
 }
 
 // New creates a new root application model with the given store.
 func New(s *store.SQLiteStore) Model {
 	keys := DefaultKeyMap()
 	p := appsync.New(s)
+
+	// Try to load the Claude API key for the AI assistant.
+	assistant := loadAIAssistant(s)
 
 	return Model{
 		currentView: ViewList,
@@ -59,8 +74,25 @@ func New(s *store.SQLiteStore) Model {
 		helpView:    helpview.New(keys, 80, 24),
 		commandView: command.New(80, 24),
 		configView:  configview.New(s, keys, 80, 24),
+		aiView:      aiview.New(assistant, keys, 80, 24),
 		poller:      p,
 	}
+}
+
+// loadAIAssistant attempts to create an AI assistant by loading the API key
+// from the environment variable or system keyring. Returns nil if no key
+// is available.
+func loadAIAssistant(s *store.SQLiteStore) *aiservice.Assistant {
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		var err error
+		apiKey, err = credential.Get("claude-api-key")
+		if err != nil || apiKey == "" {
+			return nil
+		}
+	}
+
+	return aiservice.New(apiKey, s, "", 0)
 }
 
 // Init returns the initial commands to load tasks and start polling.
@@ -86,7 +118,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.helpView.SetSize(contentWidth, contentHeight)
 		m.commandView.SetSize(contentWidth, contentHeight)
 		m.configView.SetSize(contentWidth, contentHeight)
-		return m, nil
+		m.aiView.SetSize(contentWidth, contentHeight)
+		// Forward to active view so huh forms can calculate their layout.
+		return m.updateActiveView(msg)
 
 	case sourcesRegisteredMsg:
 		// If no sources are configured, enter first-run config setup.
@@ -99,11 +133,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.poller.Start()
 
 	case appsync.SyncResultMsg:
-		// After a sync completes, reload the task list
+		// Handle auth errors by showing a status bar message.
+		if msg.AuthError != nil {
+			m.authErrorMessage = msg.AuthError.Message
+		} else if msg.Error == nil {
+			// Clear auth error for this source on successful sync.
+			m.authErrorMessage = ""
+		}
+
+		// After a sync completes, reload the task list and update
+		// the unread notification count.
 		cmd := m.taskList.LoadTasks()
-		// Keep listening for more results
 		waitCmd := m.poller.WaitForNextResult()
-		return m, tea.Batch(cmd, waitCmd)
+		countCmd := m.fetchUnreadCount()
+		return m, tea.Batch(cmd, waitCmd, countCmd)
+
+	case unreadCountMsg:
+		m.unreadCount = msg.count
+		return m, nil
 
 	case tasklist.SelectedTaskMsg:
 		m.previousView = m.currentView
@@ -152,6 +199,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.registerSources(),
 		)
 
+	case aiview.AIPanelCloseMsg:
+		m.aiView.Reset()
+		m.currentView = ViewList
+		return m, nil
+
+	case aiview.AIResponseChunkMsg:
+		if m.currentView == ViewAI {
+			var cmd tea.Cmd
+			m.aiView, cmd = m.aiView.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+
+	case aiview.AINavigateTaskMsg:
+		m.previousView = m.currentView
+		m.currentView = ViewDetail
+		m.detail.SetLoading(true)
+		return m, m.loadTaskDetail(msg.TaskID)
+
 	case tea.KeyMsg:
 		// Global keys that work regardless of current view
 		switch msg.String() {
@@ -166,6 +232,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "?":
+			// Do not intercept when AI panel has input focus
+			if m.currentView == ViewAI {
+				break
+			}
 			if m.currentView == ViewHelp {
 				m.currentView = m.previousView
 				return m, nil
@@ -175,6 +245,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case ":":
+			// Do not intercept when AI panel has input focus
+			if m.currentView == ViewAI {
+				break
+			}
 			if m.currentView == ViewCommand {
 				m.currentView = m.previousView
 				return m, nil
@@ -188,6 +262,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.previousView = m.currentView
 				m.currentView = ViewConfig
 				return m, m.configView.Init()
+			}
+
+		case "a":
+			if m.currentView == ViewList {
+				m.previousView = m.currentView
+				m.currentView = ViewAI
+				return m, m.aiView.Focus()
 			}
 
 		case "r":
@@ -213,6 +294,8 @@ func (m Model) updateActiveView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detail, cmd = m.detail.Update(msg)
 	case ViewConfig:
 		m.configView, cmd = m.configView.Update(msg)
+	case ViewAI:
+		m.aiView, cmd = m.aiView.Update(msg)
 	case ViewHelp:
 		m.helpView, cmd = m.helpView.Update(msg)
 	case ViewCommand:
@@ -228,7 +311,11 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	header := m.layout.RenderHeader("Task Manager", m.syncStatus())
+	headerTitle := "Task Manager"
+	if m.unreadCount > 0 {
+		headerTitle = fmt.Sprintf("Task Manager [%d new]", m.unreadCount)
+	}
+	header := m.layout.RenderHeader(headerTitle, m.syncStatus())
 	content := m.renderContent()
 	statusBar := m.layout.RenderStatusBar(m.keyHints())
 
@@ -245,7 +332,7 @@ func (m Model) renderContent() string {
 	case ViewConfig:
 		return m.configView.View()
 	case ViewAI:
-		return "AI assistant view"
+		return m.aiView.View()
 	case ViewHelp:
 		return m.helpView.View()
 	case ViewCommand:
@@ -284,6 +371,11 @@ func (m Model) syncStatus() string {
 
 // keyHints returns keyboard shortcut hints for the status bar.
 func (m Model) keyHints() string {
+	// Show auth error prominently when present.
+	if m.authErrorMessage != "" && m.currentView == ViewList {
+		return m.authErrorMessage
+	}
+
 	switch m.currentView {
 	case ViewHelp:
 		return "? close help | esc back"
@@ -293,8 +385,10 @@ func (m Model) keyHints() string {
 		return "esc back | c comment | t transition | p approve | j/k scroll"
 	case ViewConfig:
 		return "a add | e edit | d delete | enter test | esc back"
+	case ViewAI:
+		return "enter send | esc close"
 	default:
-		return "q quit | ? help | c config | : command | / search | tab sort | 1/2/3 filter"
+		return "q quit | ? help | a AI | c config | : command | / search | tab sort | 1/2/3 filter"
 	}
 }
 
@@ -312,6 +406,19 @@ func (m Model) loadTaskDetail(taskID string) tea.Cmd {
 		// Convert store task to source.ItemDetail
 		itemDetail := taskToItemDetail(task)
 		return detail.DetailLoadedMsg{Detail: itemDetail}
+	}
+}
+
+// fetchUnreadCount returns a tea.Cmd that queries the store for the
+// number of unread notifications.
+func (m Model) fetchUnreadCount() tea.Cmd {
+	s := m.store
+	return func() tea.Msg {
+		notifications, err := s.GetUnreadNotifications(context.Background())
+		if err != nil {
+			return unreadCountMsg{count: 0}
+		}
+		return unreadCountMsg{count: len(notifications)}
 	}
 }
 

@@ -2,9 +2,28 @@ package source
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/nhle/task-management/internal/model"
 )
+
+// AuthError indicates that authentication has failed or expired for a source.
+// It is returned by source clients when a 401 response is received.
+type AuthError struct {
+	SourceType SourceType
+	Message    string
+}
+
+func (e *AuthError) Error() string {
+	return fmt.Sprintf("auth error (%s): %s", e.SourceType, e.Message)
+}
+
+// IsAuthError reports whether err (or any error in its chain) is an AuthError.
+func IsAuthError(err error) bool {
+	var authErr *AuthError
+	return errors.As(err, &authErr)
+}
 
 // SourceType identifies the kind of external source integration.
 type SourceType string
