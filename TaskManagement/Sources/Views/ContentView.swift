@@ -8,7 +8,7 @@ enum NavigationItem: Hashable {
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @State private var sidebarSelection: NavigationItem? = .todos(.all)
+    @State private var sidebarSelection: NavigationItem? = .timeTracking
     @State private var selectedTodo: Todo?
 
     var body: some View {

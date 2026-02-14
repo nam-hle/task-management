@@ -7,12 +7,41 @@ struct TimeTrackingDashboard: View {
     @Query(sort: \TimeEntry.startTime, order: .forward)
     private var allEntries: [TimeEntry]
 
+    @State private var wakaTimeService = WakaTimeService()
+    @State private var selectedTab = "tickets"
+
     private var todayEntries: [TimeEntry] {
         let startOfDay = Calendar.current.startOfDay(for: Date())
         return allEntries.filter { $0.startTime >= startOfDay }
     }
 
     var body: some View {
+        TabView(selection: $selectedTab) {
+            TicketsView(wakaTimeService: wakaTimeService)
+                .tabItem {
+                    Label("Tickets", systemImage: "ticket")
+                }
+                .tag("tickets")
+
+            BranchesView(wakaTimeService: wakaTimeService)
+                .tabItem {
+                    Label("Branches", systemImage: "arrow.triangle.branch")
+                }
+                .tag("branches")
+
+            applicationsContent
+                .tabItem {
+                    Label("Applications", systemImage: "app.dashed")
+                }
+                .tag("applications")
+        }
+        .navigationTitle("Time Tracking")
+        .task {
+            await wakaTimeService.fetchBranches(for: Date())
+        }
+    }
+
+    private var applicationsContent: some View {
         VStack(spacing: 0) {
             dashboardHeader
 
@@ -23,13 +52,11 @@ struct TimeTrackingDashboard: View {
             } else {
                 ScrollView {
                     VStack(spacing: 16) {
-                        // Timeline chart (WakaTime-style)
                         TimelineChartView(entries: todayEntries, date: Date())
                             .padding(.top, 8)
 
                         Divider()
 
-                        // Individual entries list
                         LazyVStack(spacing: 1) {
                             ForEach(todayEntries) { entry in
                                 TimeEntryRow(entry: entry)
@@ -40,7 +67,6 @@ struct TimeTrackingDashboard: View {
                 }
             }
         }
-        .navigationTitle("Time Tracking")
     }
 
     private var dashboardHeader: some View {

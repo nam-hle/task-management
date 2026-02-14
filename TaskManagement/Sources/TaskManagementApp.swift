@@ -20,6 +20,7 @@ struct TaskManagementApp: App {
                 TimeEntry.self,
                 IntegrationConfig.self,
                 TrackedApplication.self,
+                TicketOverride.self,
             ])
             let config = ModelConfiguration(isStoredInMemoryOnly: false)
             let container = try ModelContainer(for: schema, configurations: config)
