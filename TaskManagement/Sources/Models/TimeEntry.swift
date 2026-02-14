@@ -13,6 +13,11 @@ final class TimeEntry {
     var isInProgress: Bool
     var createdAt: Date
 
+    // 005: Application tracking fields
+    var applicationName: String?
+    var applicationBundleID: String?
+    var label: String?
+
     var todo: Todo?
 
     var formattedDuration: String {
@@ -41,7 +46,10 @@ final class TimeEntry {
         bookingStatus: BookingStatus = .unreviewed,
         source: EntrySource = .manual,
         isInProgress: Bool = false,
-        todo: Todo? = nil
+        todo: Todo? = nil,
+        applicationName: String? = nil,
+        applicationBundleID: String? = nil,
+        label: String? = nil
     ) {
         self.id = UUID()
         self.startTime = startTime
@@ -53,5 +61,8 @@ final class TimeEntry {
         self.isInProgress = isInProgress
         self.createdAt = Date()
         self.todo = todo
+        self.applicationName = applicationName
+        self.applicationBundleID = applicationBundleID
+        self.label = label
     }
 }

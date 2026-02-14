@@ -1,11 +1,13 @@
 import SwiftUI
 import SwiftData
+import ApplicationServices
 
 @main
 struct TaskManagementApp: App {
     let modelContainer: ModelContainer
 
-    @State private var timerManager = TimerManager()
+    @State private var coordinator: TrackingCoordinator
+    @State private var showAccessibilityPermission = false
 
     init() {
         do {
@@ -17,47 +19,68 @@ struct TaskManagementApp: App {
                 BitbucketLink.self,
                 TimeEntry.self,
                 IntegrationConfig.self,
+                TrackedApplication.self,
             ])
             let config = ModelConfiguration(isStoredInMemoryOnly: false)
-            modelContainer = try ModelContainer(for: schema, configurations: config)
+            let container = try ModelContainer(for: schema, configurations: config)
+            modelContainer = container
+            _coordinator = State(initialValue: TrackingCoordinator(modelContainer: container))
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             ContentView()
-                .environment(timerManager)
+                .environment(coordinator)
+                .overlay {
+                    if showAccessibilityPermission {
+                        AccessibilityPermissionView {
+                            showAccessibilityPermission = false
+                            coordinator.startTracking()
+                        }
+                    }
+                }
+                .onAppear {
+                    seedDataIfNeeded()
+                    coordinator.recoverFromCrash()
+                    if AXIsProcessTrusted() {
+                        coordinator.startTracking()
+                    } else {
+                        showAccessibilityPermission = true
+                    }
+                }
         }
         .modelContainer(modelContainer)
 
         MenuBarExtra {
             MenuBarView()
-                .environment(timerManager)
+                .environment(coordinator)
                 .modelContainer(modelContainer)
         } label: {
-            Label(timerManager.menuBarText, systemImage: timerManager.isRunning ? "timer" : "checklist")
+            Label(
+                menuBarText,
+                systemImage: coordinator.state == .tracking ? "timer" : "checklist"
+            )
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView()
+                .modelContainer(modelContainer)
+        }
     }
-}
 
-@Observable
-final class TimerManager {
-    var activeEntryID: UUID?
-    var activeTodoTitle: String?
-    var elapsedSeconds: Int = 0
-    var isRunning: Bool = false
-
-    var menuBarText: String {
-        if isRunning, let title = activeTodoTitle {
-            return "\(formatElapsed(elapsedSeconds)) - \(title)"
+    private var menuBarText: String {
+        if case .tracking = coordinator.state,
+           let appName = coordinator.currentAppName {
+            return "\(formatElapsed(coordinator.elapsedSeconds)) - \(appName)"
         }
         return "Tasks"
     }
 
-    func formatElapsed(_ seconds: Int) -> String {
+    private func formatElapsed(_ seconds: Int) -> String {
         let hours = seconds / 3600
         let minutes = (seconds % 3600) / 60
         let secs = seconds % 60
@@ -65,5 +88,12 @@ final class TimerManager {
             return String(format: "%d:%02d:%02d", hours, minutes, secs)
         }
         return String(format: "%d:%02d", minutes, secs)
+    }
+
+    private func seedDataIfNeeded() {
+        let service = TimeEntryService(modelContainer: modelContainer)
+        Task {
+            try? await service.seedTrackedApplicationsIfNeeded()
+        }
     }
 }

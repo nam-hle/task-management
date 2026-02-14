@@ -1,15 +1,11 @@
 <!--
   Sync Impact Report
-  Version change: 1.0.0 → 2.0.0 (MAJOR — platform redefinition)
+  Version change: 3.0.0 → 3.1.0 (MINOR — priority reordering within existing principles)
   Modified principles:
-    - I. Local-First Data (unchanged)
-    - II. Adapter Pattern for External Sources (unchanged)
-    - III. Simplicity & YAGNI (unchanged)
-    - IV. Spec-Driven Development (unchanged)
-  Added principles:
-    - V. Todo-First Design
+    - I. Ticket-Based Task Management → Ticket-Based Time Booking (priority inversion:
+      time booking is now the primary purpose, todo management is secondary)
   Modified sections:
-    - Technology Constraints: Go/TUI → Swift/SwiftUI native macOS
+    - Feature Scope: Reordered pillars — Time Booking is now Pillar 1, Task Watching is Pillar 2
   Removed sections: None
   Templates requiring updates:
     - .specify/templates/plan-template.md ✅ (no changes needed)
@@ -22,13 +18,18 @@
 
 ## Core Principles
 
-### I. Todo-First Design
+### I. Ticket-Based Time Booking
 
-The application is a **todo list first**. Todos are the central entity
-around which everything else revolves. Jira tickets, Bitbucket PRs, and
-time tracking entries MUST link back to todos — they are contextual
-enrichments, not standalone features. The app MUST be useful as a
-standalone todo manager even with zero external integrations configured.
+The application's **primary purpose** is **time booking** — automatically
+tracking how developers spend their time across applications, browser
+tabs, and IDE activity, then attributing that time to Jira tickets and
+Bitbucket PRs for export to Timension. Everything in the app serves this
+goal: tickets are the unit of time attribution, and every tracked minute
+should map back to a ticket. The **secondary purpose** is **todo/task
+management** — a lightweight todo list that organizes work and provides
+the ticket linkage that powers time attribution. The app MUST still
+function as a basic todo manager without integrations, but the intended
+workflow is: track time → match to tickets → review → book.
 
 ### II. Local-First Data
 
@@ -51,7 +52,7 @@ Start with the simplest implementation that solves the stated problem.
 Abstractions MUST be justified by concrete, current use cases — not
 hypothetical future needs. Prefer three similar lines of code over a
 premature abstraction. Features MUST be specified and planned before
-implementation (see Principle V).
+implementation (see Principle V: Spec-Driven Development).
 
 ### V. Spec-Driven Development
 
@@ -73,13 +74,27 @@ define HOW. This ensures alignment before effort is invested. Trivial fixes
 
 ## Feature Scope
 
-The application covers four integrated capabilities, all centered on todos:
+The application serves two integrated pillars, ordered by priority:
 
-1. **Todo management** — create, organize, prioritize, complete todos
-2. **Jira ticket linking** — link todos to Jira tickets, sync status
-3. **Bitbucket PR linking** — link todos to PRs, track review status
-4. **Time tracking & booking** — track time per todo, export for
-   Timension booking
+**Pillar 1 (Primary) — Ticket-Based Time Booking**
+
+1. **Automatic time tracking** — monitor active applications and browser
+   tabs (Firefox, Chrome) to detect work on Jira tickets and Bitbucket PRs
+2. **WakaTime integration** — import coding activity from IDEs for
+   project-level context
+3. **Learned review & export** — review tracked time, learn patterns for
+   auto-approval, export formatted summaries for Timension booking
+
+**Pillar 2 (Secondary) — Todo & Task Management**
+
+4. **Todo management** — create, organize, prioritize, complete todos
+5. **Jira ticket linking** — link todos to Jira tickets, sync status,
+   surface ticket changes
+6. **Bitbucket PR linking** — link todos to PRs, track review status
+
+Pillar 2 provides the ticket linkage that Pillar 1 depends on for
+accurate time attribution. Todos are the glue between tracked time and
+external tickets.
 
 ## Development Workflow
 
@@ -105,4 +120,4 @@ All implementation plans MUST include a Constitution Check verifying
 compliance with these principles. Violations MUST be explicitly justified
 in the plan's Complexity Tracking table.
 
-**Version**: 2.0.0 | **Ratified**: 2026-02-14 | **Last Amended**: 2026-02-14
+**Version**: 3.1.0 | **Ratified**: 2026-02-14 | **Last Amended**: 2026-02-14

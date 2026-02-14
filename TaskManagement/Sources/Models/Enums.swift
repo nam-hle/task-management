@@ -28,6 +28,7 @@ enum BookingStatus: String, Codable, CaseIterable, Identifiable {
     case unreviewed
     case reviewed
     case exported
+    case booked
 
     var id: String { rawValue }
 
@@ -36,6 +37,7 @@ enum BookingStatus: String, Codable, CaseIterable, Identifiable {
         case .unreviewed: "Unreviewed"
         case .reviewed: "Reviewed"
         case .exported: "Exported"
+        case .booked: "Booked"
         }
     }
 }
@@ -44,6 +46,7 @@ enum EntrySource: String, Codable, CaseIterable, Identifiable {
     case manual
     case timer
     case autoDetected
+    case wakatime
 
     var id: String { rawValue }
 
@@ -52,8 +55,24 @@ enum EntrySource: String, Codable, CaseIterable, Identifiable {
         case .manual: "Manual"
         case .timer: "Timer"
         case .autoDetected: "Auto-Detected"
+        case .wakatime: "WakaTime"
         }
     }
+}
+
+enum TrackingState: Equatable {
+    case idle
+    case tracking
+    case paused(reason: PauseReason)
+    case permissionRequired
+}
+
+enum PauseReason: String, Codable, Equatable {
+    case userPaused
+    case systemIdle
+    case systemSleep
+    case screenLocked
+    case manualTimerActive
 }
 
 enum IntegrationType: String, Codable, CaseIterable, Identifiable {

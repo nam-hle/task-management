@@ -72,3 +72,12 @@ vendor/
 *.db
 *.db-journal
 *.db-wal
+
+# Swift
+.build/
+DerivedData/
+*.swiftpm/
+Packages/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+Package.resolved
