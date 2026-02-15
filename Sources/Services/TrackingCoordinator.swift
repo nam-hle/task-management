@@ -7,21 +7,9 @@ import ApplicationServices
 @Observable
 final class TrackingCoordinator {
     private(set) var pluginManager: PluginManager?
-    private(set) var isManualTimerActive = false
 
     private let modelContainer: ModelContainer
     private var timeEntryService: TimeEntryService?
-
-    // Manual timer state
-    private var manualEntryID: PersistentIdentifier?
-    private var manualTimerStart: Date?
-    private var manualTimerLabel: String?
-    private var elapsedTimer: Timer?
-
-    var manualTimerElapsed: Int {
-        guard isManualTimerActive, let start = manualTimerStart else { return 0 }
-        return Int(Date().timeIntervalSince(start))
-    }
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
@@ -45,43 +33,8 @@ final class TrackingCoordinator {
         }
     }
 
-    func startManualTimer(label: String?, todoID: PersistentIdentifier? = nil) {
-        isManualTimerActive = true
-        manualTimerLabel = label
-
-        let service = getTimeEntryService()
-        Task {
-            do {
-                let entryID = try await service.create(
-                    todoID: todoID,
-                    source: .timer,
-                    startTime: Date(),
-                    label: label
-                )
-                manualEntryID = entryID
-                manualTimerStart = Date()
-                startElapsedTimer()
-            } catch {
-                print("Failed to start manual timer: \(error)")
-            }
-        }
-    }
-
-    func stopManualTimer() {
-        guard isManualTimerActive else { return }
-        isManualTimerActive = false
-
-        if let entryID = manualEntryID {
-            let service = getTimeEntryService()
-            Task {
-                try? await service.finalize(entryID: entryID, endTime: Date())
-            }
-        }
-        manualEntryID = nil
-        manualTimerStart = nil
-        manualTimerLabel = nil
-        elapsedTimer?.invalidate()
-        elapsedTimer = nil
+    func syncPlugins() async {
+        await pluginManager?.syncAll()
     }
 
     func recoverFromCrash() {
@@ -105,16 +58,5 @@ final class TrackingCoordinator {
         let service = TimeEntryService(modelContainer: modelContainer)
         timeEntryService = service
         return service
-    }
-
-    private func startElapsedTimer() {
-        elapsedTimer?.invalidate()
-        elapsedTimer = Timer.scheduledTimer(
-            withTimeInterval: 1, repeats: true
-        ) { [weak self] _ in
-            Task { @MainActor in
-                _ = self?.manualTimerElapsed
-            }
-        }
     }
 }

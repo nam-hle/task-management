@@ -8,12 +8,7 @@ struct SettingsView: View {
                     Label("Plugins", systemImage: "puzzlepiece.extension")
                 }
 
-            TrackedAppsSettingsView()
-                .tabItem {
-                    Label("Tracked Apps", systemImage: "app.badge.checkmark")
-                }
-
-            TrackingSettingsView()
+TrackingSettingsView()
                 .tabItem {
                     Label("Tracking", systemImage: "timer")
                 }

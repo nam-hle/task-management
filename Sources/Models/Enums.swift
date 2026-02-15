@@ -46,7 +46,6 @@ enum BookingStatus: String, Codable, CaseIterable, Identifiable {
 enum EntrySource: String, Codable, CaseIterable, Identifiable {
     case manual
     case timer
-    case autoDetected
     case wakatime
     case edited
     case chrome
@@ -58,12 +57,17 @@ enum EntrySource: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .manual: "Manual"
         case .timer: "Timer"
-        case .autoDetected: "Auto-Detected"
         case .wakatime: "WakaTime"
         case .edited: "Edited"
         case .chrome: "Chrome"
         case .firefox: "Firefox"
         }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        self = EntrySource(rawValue: raw) ?? .manual
     }
 }
 

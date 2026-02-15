@@ -11,12 +11,14 @@ final class WakaTimePlugin: TimeTrackingPlugin {
     private(set) var lastError: String?
 
     private let modelContainer: ModelContainer
+    private let logService: LogService?
     private let wakaTimeService = WakaTimeService()
     private var syncTimer: Timer?
     private var syncInterval: TimeInterval = 300 // 5 minutes
 
-    init(modelContainer: ModelContainer) {
+    init(modelContainer: ModelContainer, logService: LogService? = nil) {
         self.modelContainer = modelContainer
+        self.logService = logService
     }
 
     // MARK: - TimeTrackingPlugin
@@ -53,17 +55,26 @@ final class WakaTimePlugin: TimeTrackingPlugin {
         status = .inactive
     }
 
+    func sync() async {
+        guard status == .active else { return }
+        await fetchAndSync(for: Date())
+    }
+
     // MARK: - Data Sync
 
     func fetchAndSync(for date: Date) async {
         isLoading = true
         defer { isLoading = false }
 
+        let df = Self.timeFormatter
+        logService?.log("WakaTime: fetching data for \(Self.dateFormatter.string(from: date))")
+
         await wakaTimeService.fetchBranches(for: date)
 
         if let error = wakaTimeService.error {
             lastError = error.localizedDescription
             status = .error(lastError!)
+            logService?.log("WakaTime: fetch failed — \(lastError!)", level: .error)
             return
         }
 
@@ -77,8 +88,21 @@ final class WakaTimePlugin: TimeTrackingPlugin {
         let branches = wakaTimeService.branches
         let service = TimeEntryService(modelContainer: modelContainer)
 
+        logService?.log(
+            "WakaTime: received \(branches.count) branches"
+        )
+
+        var createdCount = 0
+        var updatedCount = 0
+        var skippedCount = 0
+
         for branch in branches {
-            if excludedProjects.contains(branch.project) { continue }
+            if excludedProjects.contains(branch.project) {
+                logService?.log(
+                    "WakaTime: skip excluded project \(branch.project)"
+                )
+                continue
+            }
 
             // Resolve ticket ID
             let ticketID = TicketInferenceService.resolveTicketID(
@@ -89,6 +113,15 @@ final class WakaTimePlugin: TimeTrackingPlugin {
                 overrides: overrides
             )
 
+            let durationMin = String(
+                format: "%.1f", branch.totalDuration / 60
+            )
+            logService?.log(
+                "WakaTime: \(branch.project)/\(branch.branch)"
+                + " → \(ticketID ?? "unassigned")"
+                + " (\(durationMin)m, \(branch.segments.count) segments)"
+            )
+
             let metadata = "{\"project\":\"\(escapeJSON(branch.project))\",\"branch\":\"\(escapeJSON(branch.branch))\"}"
 
             for segment in branch.segments {
@@ -96,13 +129,38 @@ final class WakaTimePlugin: TimeTrackingPlugin {
                     // Check for existing entry overlap to avoid duplicates
                     let existingEntries = try await service.entries(for: segment.start)
                     let wakatimeSource = "wakatime"
-                    let hasOverlap = existingEntries.contains { entry in
+                    let overlapping = existingEntries.first { entry in
                         entry.sourcePluginID == wakatimeSource
                             && entry.startTime <= segment.end
                             && (entry.endTime ?? Date()) >= segment.start
                     }
 
-                    if !hasOverlap {
+                    if let existing = overlapping {
+                        if existing.ticketID == nil, let ticketID {
+                            try await service.assignTicket(
+                                entryIDs: [existing.persistentModelID],
+                                ticketID: ticketID
+                            )
+                            updatedCount += 1
+                            logService?.log(
+                                "WakaTime:   ~ update"
+                                + " \(df.string(from: existing.startTime))"
+                                + "–\(df.string(from: existing.endTime ?? Date()))"
+                                + " → \(ticketID)"
+                            )
+                        } else {
+                            skippedCount += 1
+                            logService?.log(
+                                "WakaTime:   ~ skip"
+                                + " \(df.string(from: segment.start))"
+                                + "–\(df.string(from: segment.end))"
+                                + " (overlaps existing"
+                                + " \(df.string(from: existing.startTime))"
+                                + "–\(df.string(from: existing.endTime ?? Date()))"
+                                + " ticket=\(existing.ticketID ?? "nil"))"
+                            )
+                        }
+                    } else {
                         _ = try await service.createFinalized(
                             startTime: segment.start,
                             endTime: segment.end,
@@ -112,18 +170,45 @@ final class WakaTimePlugin: TimeTrackingPlugin {
                             ticketID: ticketID,
                             contextMetadata: metadata
                         )
+                        createdCount += 1
+                        logService?.log(
+                            "WakaTime:   + entry"
+                            + " \(df.string(from: segment.start))"
+                            + "–\(df.string(from: segment.end))"
+                        )
                     }
                 } catch {
-                    print("WakaTime: Failed to create entry for segment: \(error)")
+                    logService?.log(
+                        "WakaTime: failed to create entry — \(error)",
+                        level: .error
+                    )
                 }
             }
         }
+
+        logService?.log(
+            "WakaTime: sync done — \(createdCount) created,"
+            + " \(updatedCount) updated,"
+            + " \(skippedCount) skipped"
+        )
 
         if status != .inactive {
             status = .active
             lastError = nil
         }
     }
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
 
     // MARK: - Helpers
 

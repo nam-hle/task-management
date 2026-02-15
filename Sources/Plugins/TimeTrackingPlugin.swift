@@ -9,6 +9,11 @@ protocol TimeTrackingPlugin: AnyObject, Identifiable where ID == String {
     nonisolated func isAvailable() -> Bool
     func start() async throws
     func stop() async throws
+    func sync() async
+}
+
+extension TimeTrackingPlugin {
+    func sync() async {}
 }
 
 @MainActor
@@ -73,6 +78,12 @@ final class PluginManager {
 
     func plugin(id: String) -> (any TimeTrackingPlugin)? {
         plugins.first { $0.id == id }
+    }
+
+    func syncAll() async {
+        for plugin in plugins where isEnabled(pluginID: plugin.id) {
+            await plugin.sync()
+        }
     }
 
     private func enabledKey(for pluginID: String) -> String {

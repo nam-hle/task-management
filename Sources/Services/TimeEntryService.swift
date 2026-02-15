@@ -21,7 +21,7 @@ actor TimeEntryService {
         todoID: PersistentIdentifier? = nil,
         applicationName: String? = nil,
         applicationBundleID: String? = nil,
-        source: EntrySource = .autoDetected,
+        source: EntrySource = .manual,
         startTime: Date = Date(),
         label: String? = nil,
         sourcePluginID: String? = nil,
@@ -390,49 +390,4 @@ actor TimeEntryService {
         try modelContext.save()
     }
 
-    // MARK: - Seeding
-
-    func seedTrackedApplicationsIfNeeded() throws {
-        let descriptor = FetchDescriptor<TrackedApplication>()
-        let existing = try modelContext.fetch(descriptor)
-        guard existing.isEmpty else { return }
-
-        let preConfigured: [(String, String, Bool)] = [
-            ("Google Chrome", "com.google.Chrome", true),
-            ("Firefox", "org.mozilla.firefox", true),
-        ]
-        let suggested: [(String, String)] = [
-            ("IntelliJ IDEA", "com.jetbrains.intellij"),
-            ("Xcode", "com.apple.dt.Xcode"),
-            ("Visual Studio Code", "com.microsoft.VSCode"),
-            ("Terminal", "com.apple.Terminal"),
-            ("Slack", "com.tinyspeck.slackmacgap"),
-        ]
-
-        for (index, (name, bundleID, isBrowser)) in preConfigured.enumerated() {
-            let app = TrackedApplication(
-                name: name,
-                bundleIdentifier: bundleID,
-                isBrowser: isBrowser,
-                isPreConfigured: true,
-                isEnabled: true,
-                sortOrder: index
-            )
-            modelContext.insert(app)
-        }
-
-        for (index, (name, bundleID)) in suggested.enumerated() {
-            let app = TrackedApplication(
-                name: name,
-                bundleIdentifier: bundleID,
-                isBrowser: false,
-                isPreConfigured: false,
-                isEnabled: false,
-                sortOrder: preConfigured.count + index
-            )
-            modelContext.insert(app)
-        }
-
-        try modelContext.save()
-    }
 }

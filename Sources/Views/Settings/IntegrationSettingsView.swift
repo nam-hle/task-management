@@ -10,41 +10,47 @@ struct IntegrationSettingsView: View {
     @State private var jiraToken = ""
     @State private var bitbucketURL = ""
     @State private var bitbucketToken = ""
-    @State private var statusMessage: String?
-    @State private var statusIsError = false
-    @State private var isTesting = false
-    @State private var isBBTesting = false
+
+    @State private var jiraStatus: ConnectionStatus?
+    @State private var bbStatus: ConnectionStatus?
+
+    @State private var jiraSaveTask: Task<Void, Never>?
+    @State private var bbSaveTask: Task<Void, Never>?
 
     var body: some View {
         Form {
             Section("Jira") {
                 TextField("Server URL", text: $jiraURL)
                     .textFieldStyle(.roundedBorder)
-                Text("Base URL before /browse — e.g. https://jira.company.com/jira")
+                Text(
+                    "Base URL before /browse"
+                    + " — e.g. https://jira.company.com/jira"
+                )
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                 SecureField("Personal Access Token", text: $jiraToken)
                     .textFieldStyle(.roundedBorder)
 
                 HStack {
-                    Button("Save Jira Settings") {
-                        saveJiraSettings()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-
                     Button("Test Connection") {
                         testJiraConnection()
                     }
                     .controlSize(.small)
-                    .disabled(jiraURL.isEmpty || jiraToken.isEmpty || isTesting)
+                    .disabled(
+                        jiraURL.isEmpty || jiraToken.isEmpty
+                        || jiraStatus == .testing
+                    )
 
-                    if isTesting {
+                    if jiraStatus == .testing {
                         ProgressView()
                             .controlSize(.small)
                     }
                 }
+
+                statusRow(jiraStatus)
             }
+            .onChange(of: jiraURL) { debouncedSaveJira() }
+            .onChange(of: jiraToken) { debouncedSaveJira() }
 
             Section("Bitbucket") {
                 TextField("Server URL", text: $bitbucketURL)
@@ -56,56 +62,49 @@ struct IntegrationSettingsView: View {
                     .textFieldStyle(.roundedBorder)
 
                 HStack {
-                    Button("Save Bitbucket Settings") {
-                        saveBitbucketSettings()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-
                     Button("Test Connection") {
                         testBitbucketConnection()
                     }
                     .controlSize(.small)
                     .disabled(
-                        bitbucketURL.isEmpty
-                        || bitbucketToken.isEmpty
-                        || isBBTesting
+                        bitbucketURL.isEmpty || bitbucketToken.isEmpty
+                        || bbStatus == .testing
                     )
 
-                    if isBBTesting {
+                    if bbStatus == .testing {
                         ProgressView()
                             .controlSize(.small)
                     }
                 }
-            }
 
-            Section("WakaTime") {
-                let hasKey = WakaTimeConfigReader.readAPIKey() != nil
-                LabeledContent("Status") {
-                    if hasKey {
-                        Label("Configured", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Label("Not configured", systemImage: "xmark.circle")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Text("WakaTime reads its API key from ~/.wakatime.cfg")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                statusRow(bbStatus)
             }
-
-            if let message = statusMessage {
-                Section {
-                    Text(message)
-                        .foregroundStyle(statusIsError ? .red : .green)
-                        .font(.callout)
-                }
-            }
+            .onChange(of: bitbucketURL) { debouncedSaveBitbucket() }
+            .onChange(of: bitbucketToken) { debouncedSaveBitbucket() }
         }
         .formStyle(.grouped)
         .onAppear { loadSettings() }
     }
+
+    @ViewBuilder
+    private func statusRow(_ status: ConnectionStatus?) -> some View {
+        if let status {
+            switch status {
+            case .connected(let message):
+                Label(message, systemImage: "circle.fill")
+                    .foregroundStyle(.green)
+                    .font(.callout)
+            case .error(let message):
+                Label(message, systemImage: "circle.fill")
+                    .foregroundStyle(.red)
+                    .font(.callout)
+            case .testing:
+                EmptyView()
+            }
+        }
+    }
+
+    // MARK: - Load & Save
 
     private func loadSettings() {
         let jiraConfig = configs.first { $0.type == .jira }
@@ -114,99 +113,125 @@ struct IntegrationSettingsView: View {
 
         let bbConfig = configs.first { $0.type == .bitbucket }
         bitbucketURL = bbConfig?.serverURL ?? ""
-        bitbucketToken = KeychainService.retrieve(key: "bitbucket_token") ?? ""
+        bitbucketToken =
+            KeychainService.retrieve(key: "bitbucket_token") ?? ""
+
+        if !jiraURL.isEmpty && !jiraToken.isEmpty {
+            testJiraConnection()
+        }
+        if !bitbucketURL.isEmpty && !bitbucketToken.isEmpty {
+            testBitbucketConnection()
+        }
     }
 
-    private func saveJiraSettings() {
-        saveConfig(type: .jira, url: jiraURL, username: "")
-        if !jiraToken.isEmpty {
-            try? KeychainService.store(key: "jira_token", value: jiraToken)
+    private func debouncedSaveJira() {
+        jiraSaveTask?.cancel()
+        jiraSaveTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            saveConfig(type: .jira, url: jiraURL, username: "")
+            if !jiraToken.isEmpty {
+                try? KeychainService.store(
+                    key: "jira_token", value: jiraToken
+                )
+            }
         }
-        statusIsError = false
-        statusMessage = "Jira settings saved"
     }
+
+    private func debouncedSaveBitbucket() {
+        bbSaveTask?.cancel()
+        bbSaveTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            saveConfig(
+                type: .bitbucket, url: bitbucketURL, username: ""
+            )
+            if !bitbucketToken.isEmpty {
+                try? KeychainService.store(
+                    key: "bitbucket_token", value: bitbucketToken
+                )
+            }
+        }
+    }
+
+    // MARK: - Test Connections
 
     private func testJiraConnection() {
-        isTesting = true
-        statusMessage = nil
+        jiraStatus = .testing
 
-        let baseURL = jiraURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: "\(baseURL)/rest/api/2/myself") else {
-            statusIsError = true
-            statusMessage = "Invalid server URL"
-            isTesting = false
+        let baseURL = jiraURL
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: "\(baseURL)/rest/api/2/myself")
+        else {
+            jiraStatus = .error("Invalid server URL")
             return
         }
 
         var request = URLRequest(url: url)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("Bearer \(jiraToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(
+            "application/json", forHTTPHeaderField: "Accept"
+        )
+        request.setValue(
+            "Bearer \(jiraToken)",
+            forHTTPHeaderField: "Authorization"
+        )
 
         Task {
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) =
+                    try await URLSession.shared.data(for: request)
                 guard let http = response as? HTTPURLResponse else {
-                    statusIsError = true
-                    statusMessage = "No response from server"
-                    isTesting = false
+                    jiraStatus = .error("No response from server")
                     return
                 }
 
                 if http.statusCode == 200 {
-                    if let json = try? JSONSerialization.jsonObject(with: data)
-                        as? [String: Any],
-                       let displayName = json["displayName"] as? String {
-                        statusIsError = false
-                        statusMessage = "Connected as \(displayName)"
+                    if let json = try? JSONSerialization.jsonObject(
+                        with: data
+                    ) as? [String: Any],
+                       let name = json["displayName"] as? String
+                    {
+                        jiraStatus = .connected(
+                            "Connected as \(name)"
+                        )
                     } else {
-                        statusIsError = true
-                        statusMessage = "Got 200 but unexpected response — check the base URL includes the context path (e.g. /jira)"
+                        jiraStatus = .error(
+                            "Got 200 but unexpected response"
+                            + " — check the base URL includes"
+                            + " the context path (e.g. /jira)"
+                        )
                     }
                 } else if http.statusCode == 401 {
-                    statusIsError = true
-                    statusMessage = "Authentication failed — check your token"
+                    jiraStatus = .error(
+                        "Authentication failed — check your token"
+                    )
                 } else if http.statusCode == 403 {
-                    statusIsError = true
-                    statusMessage = "Forbidden — token lacks permissions"
+                    jiraStatus = .error(
+                        "Forbidden — token lacks permissions"
+                    )
                 } else {
-                    statusIsError = true
-                    statusMessage = "HTTP \(http.statusCode) — check server URL"
+                    jiraStatus = .error(
+                        "HTTP \(http.statusCode) — check server URL"
+                    )
                 }
             } catch {
-                statusIsError = true
-                statusMessage = "Connection failed: \(error.localizedDescription)"
+                jiraStatus = .error(
+                    "Connection failed:"
+                    + " \(error.localizedDescription)"
+                )
             }
-            isTesting = false
         }
-    }
-
-    private func saveBitbucketSettings() {
-        saveConfig(
-            type: .bitbucket,
-            url: bitbucketURL,
-            username: ""
-        )
-        if !bitbucketToken.isEmpty {
-            try? KeychainService.store(
-                key: "bitbucket_token", value: bitbucketToken
-            )
-        }
-        statusIsError = false
-        statusMessage = "Bitbucket settings saved"
     }
 
     private func testBitbucketConnection() {
-        isBBTesting = true
-        statusMessage = nil
+        bbStatus = .testing
 
         let baseURL = bitbucketURL
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let urlString = "\(baseURL)/rest/api/1.0/users"
 
         guard let url = URL(string: urlString) else {
-            statusIsError = true
-            statusMessage = "Invalid server URL"
-            isBBTesting = false
+            bbStatus = .error("Invalid server URL")
             return
         }
 
@@ -221,42 +246,44 @@ struct IntegrationSettingsView: View {
 
         Task {
             do {
-                let (_, response) = try await URLSession.shared.data(
-                    for: request
-                )
+                let (_, response) =
+                    try await URLSession.shared.data(for: request)
                 guard let http = response as? HTTPURLResponse else {
-                    statusIsError = true
-                    statusMessage = "No response from server"
-                    isBBTesting = false
+                    bbStatus = .error("No response from server")
                     return
                 }
 
                 if http.statusCode == 200 {
-                    statusIsError = false
-                    statusMessage = "Connected to Bitbucket Server"
+                    bbStatus = .connected(
+                        "Connected to Bitbucket Server"
+                    )
                 } else if http.statusCode == 401 {
-                    statusIsError = true
-                    statusMessage =
+                    bbStatus = .error(
                         "Authentication failed — check your token"
+                    )
                 } else if http.statusCode == 403 {
-                    statusIsError = true
-                    statusMessage =
+                    bbStatus = .error(
                         "Forbidden — token lacks permissions"
+                    )
                 } else {
-                    statusIsError = true
-                    statusMessage =
+                    bbStatus = .error(
                         "HTTP \(http.statusCode) — check server URL"
+                    )
                 }
             } catch {
-                statusIsError = true
-                statusMessage =
-                    "Connection failed: \(error.localizedDescription)"
+                bbStatus = .error(
+                    "Connection failed:"
+                    + " \(error.localizedDescription)"
+                )
             }
-            isBBTesting = false
         }
     }
 
-    private func saveConfig(type: IntegrationType, url: String, username: String) {
+    // MARK: - Persistence
+
+    private func saveConfig(
+        type: IntegrationType, url: String, username: String
+    ) {
         if let existing = configs.first(where: { $0.type == type }) {
             existing.serverURL = url
             existing.username = username
@@ -270,4 +297,10 @@ struct IntegrationSettingsView: View {
         }
         try? modelContext.save()
     }
+}
+
+private enum ConnectionStatus: Equatable {
+    case connected(String)
+    case error(String)
+    case testing
 }

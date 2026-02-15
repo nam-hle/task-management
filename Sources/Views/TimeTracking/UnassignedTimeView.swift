@@ -6,13 +6,39 @@ struct UnassignedTimeView: View {
 
     @Environment(\.modelContext) private var modelContext
     @State private var selectedEntries: Set<PersistentIdentifier> = []
-    @State private var bulkTicketInput = ""
     @State private var showBulkAssign = false
+    @State private var bulkTicketInput = ""
+    @State private var expandedGroups: Set<String> = []
+
+    private var groupedEntries: [EntryGroup] {
+        var groups: [String: [TimeEntry]] = [:]
+        for entry in entries {
+            let key = groupKey(for: entry)
+            groups[key, default: []].append(entry)
+        }
+        return groups.map { key, groupEntries in
+            let sorted = groupEntries.sorted {
+                $0.startTime < $1.startTime
+            }
+            let duration = sorted.reduce(0.0) {
+                $0 + $1.effectiveDuration
+            }
+            return EntryGroup(
+                key: key,
+                label: groupLabel(for: sorted.first!),
+                icon: groupIcon(for: sorted.first!),
+                entries: sorted,
+                totalDuration: duration,
+                isWakaTime: sorted.first?.sourcePluginID == "wakatime"
+            )
+        }
+        .sorted { $0.totalDuration > $1.totalDuration }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
-            entryList
+            groupList
         }
     }
 
@@ -55,57 +81,207 @@ struct UnassignedTimeView: View {
         }
     }
 
-    // MARK: - Entry List
+    // MARK: - Grouped List
 
-    private var entryList: some View {
-        ForEach(entries) { entry in
-            HStack(spacing: 8) {
-                Toggle(
-                    isOn: Binding(
-                        get: { selectedEntries.contains(entry.persistentModelID) },
-                        set: { isSelected in
-                            if isSelected {
-                                selectedEntries.insert(entry.persistentModelID)
-                            } else {
-                                selectedEntries.remove(entry.persistentModelID)
-                            }
+    private var groupList: some View {
+        ForEach(groupedEntries) { group in
+            if group.isWakaTime {
+                wakaTimeProjectGroup(group)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    expandableGroupHeader(group)
+                    if expandedGroups.contains(group.key) {
+                        ForEach(group.entries) { entry in
+                            entryRow(entry)
                         }
-                    )
-                ) {
-                    EmptyView()
-                }
-                .toggleStyle(.checkbox)
-                .labelsHidden()
-
-                sourceIcon(for: entry)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(entryTitle(entry))
-                        .font(.callout)
-                        .lineLimit(1)
-                    HStack(spacing: 6) {
-                        Text(timeRange(entry))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(pluginLabel(for: entry))
-                            .font(.caption2)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(.quaternary)
-                            .clipShape(Capsule())
                     }
                 }
+            }
+        }
+    }
+
+    // MARK: - WakaTime Project Group
+
+    private func wakaTimeProjectGroup(
+        _ group: EntryGroup
+    ) -> some View {
+        let branches = wakaTimeBranches(from: group.entries)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                group.icon
+                    .font(.caption)
+
+                Text(group.label)
+                    .font(.callout.bold())
+                    .lineLimit(1)
+
+                Text("\(branches.count)")
+                    .font(.caption2)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(.quaternary)
+                    .clipShape(Capsule())
 
                 Spacer()
 
-                Text(entry.formattedDuration)
+                Text(formatDuration(group.totalDuration))
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
-
-                AssignEntryButton(entry: entry, modelContext: modelContext)
             }
             .padding(.leading, 24)
+            .padding(.vertical, 4)
+
+            ForEach(branches, id: \.name) { branch in
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+
+                    Text(branch.name)
+                        .font(.callout)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    Text(formatDuration(branch.duration))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+
+                    AssignGroupButton(
+                        entryIDs: branch.entryIDs,
+                        modelContext: modelContext
+                    )
+                }
+                .padding(.leading, 48)
+                .padding(.vertical, 2)
+            }
         }
+    }
+
+    private struct BranchInfo {
+        let name: String
+        let duration: TimeInterval
+        let entryIDs: [PersistentIdentifier]
+    }
+
+    private func wakaTimeBranches(
+        from entries: [TimeEntry]
+    ) -> [BranchInfo] {
+        var grouped: [String: (TimeInterval, [PersistentIdentifier])] = [:]
+        for entry in entries {
+            let meta = parseMetadata(entry.contextMetadata)
+            let branch = meta["branch"] ?? "unknown"
+            let existing = grouped[branch] ?? (0, [])
+            grouped[branch] = (
+                existing.0 + entry.effectiveDuration,
+                existing.1 + [entry.persistentModelID]
+            )
+        }
+        return grouped.map { name, info in
+            BranchInfo(
+                name: name,
+                duration: info.0,
+                entryIDs: info.1
+            )
+        }
+        .sorted { $0.duration > $1.duration }
+    }
+
+    // MARK: - Expandable Group
+
+    private func expandableGroupHeader(
+        _ group: EntryGroup
+    ) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                if expandedGroups.contains(group.key) {
+                    expandedGroups.remove(group.key)
+                } else {
+                    expandedGroups.insert(group.key)
+                }
+            } label: {
+                Image(
+                    systemName: expandedGroups.contains(group.key)
+                        ? "chevron.down" : "chevron.right"
+                )
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .frame(width: 12)
+            }
+            .buttonStyle(.plain)
+
+            group.icon
+                .font(.caption)
+
+            Text(group.label)
+                .font(.callout.bold())
+                .lineLimit(1)
+
+            Text("\(group.entries.count)")
+                .font(.caption2)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(.quaternary)
+                .clipShape(Capsule())
+
+            Spacer()
+
+            Text(formatDuration(group.totalDuration))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.leading, 24)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+
+    private func entryRow(_ entry: TimeEntry) -> some View {
+        HStack(spacing: 8) {
+            Toggle(
+                isOn: Binding(
+                    get: {
+                        selectedEntries.contains(
+                            entry.persistentModelID
+                        )
+                    },
+                    set: { isSelected in
+                        if isSelected {
+                            selectedEntries.insert(
+                                entry.persistentModelID
+                            )
+                        } else {
+                            selectedEntries.remove(
+                                entry.persistentModelID
+                            )
+                        }
+                    }
+                )
+            ) {
+                EmptyView()
+            }
+            .toggleStyle(.checkbox)
+            .labelsHidden()
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(entryTitle(entry))
+                    .font(.callout)
+                    .lineLimit(1)
+                Text(timeRange(entry))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Text(entry.formattedDuration)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+
+            AssignEntryButton(
+                entry: entry, modelContext: modelContext
+            )
+        }
+        .padding(.leading, 48)
     }
 
     // MARK: - Bulk Assign
@@ -115,10 +291,12 @@ struct UnassignedTimeView: View {
             Text("Assign \(selectedEntries.count) entries")
                 .font(.headline)
 
-            TextField("Ticket ID (e.g. PROJ-123)", text: $bulkTicketInput)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 200)
-                .onSubmit { bulkAssign() }
+            TextField(
+                "Ticket ID (e.g. PROJ-123)", text: $bulkTicketInput
+            )
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 200)
+            .onSubmit { bulkAssign() }
 
             HStack {
                 Button("Cancel") {
@@ -131,9 +309,11 @@ struct UnassignedTimeView: View {
                     bulkAssign()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(bulkTicketInput.trimmingCharacters(
-                    in: .whitespaces
-                ).isEmpty)
+                .disabled(
+                    bulkTicketInput
+                        .trimmingCharacters(in: .whitespaces)
+                        .isEmpty
+                )
             }
         }
         .padding()
@@ -142,18 +322,85 @@ struct UnassignedTimeView: View {
     // MARK: - Actions
 
     private func bulkAssign() {
-        let trimmed = bulkTicketInput.trimmingCharacters(in: .whitespaces)
+        let trimmed = bulkTicketInput
+            .trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
 
         let ids = Array(selectedEntries)
-        let service = TimeEntryService(modelContainer: modelContext.container)
+        let service = TimeEntryService(
+            modelContainer: modelContext.container
+        )
         Task {
-            try? await service.assignTicket(entryIDs: ids, ticketID: trimmed)
+            try? await service.assignTicket(
+                entryIDs: ids, ticketID: trimmed
+            )
         }
 
         selectedEntries.removeAll()
         bulkTicketInput = ""
         showBulkAssign = false
+    }
+
+    // MARK: - Grouping
+
+    private func groupKey(for entry: TimeEntry) -> String {
+        if entry.sourcePluginID == "wakatime" {
+            let meta = parseMetadata(entry.contextMetadata)
+            let project = meta["project"] ?? "unknown"
+            return "waka:\(project)"
+        }
+        if let pluginID = entry.sourcePluginID,
+           !pluginID.isEmpty
+        {
+            return "plugin:\(pluginID)"
+        }
+        if let appName = entry.applicationName, !appName.isEmpty {
+            return "app:\(appName)"
+        }
+        return "source:\(entry.source.rawValue)"
+    }
+
+    private func groupLabel(for entry: TimeEntry) -> String {
+        if entry.sourcePluginID == "wakatime" {
+            let meta = parseMetadata(entry.contextMetadata)
+            return meta["project"] ?? "Unknown Project"
+        }
+        if let pluginID = entry.sourcePluginID {
+            switch pluginID {
+            case "chrome": return "Google Chrome"
+            case "firefox": return "Firefox"
+            default: return pluginID
+            }
+        }
+        if let appName = entry.applicationName, !appName.isEmpty {
+            return appName
+        }
+        return entry.source.label
+    }
+
+    @ViewBuilder
+    private func groupIcon(
+        for entry: TimeEntry
+    ) -> some View {
+        if entry.sourcePluginID == "wakatime" {
+            Image(
+                systemName: "chevronleft.forwardslash.chevronright"
+            )
+            .foregroundStyle(.green)
+        } else if entry.sourcePluginID == "chrome"
+            || entry.applicationBundleID == "com.google.Chrome"
+        {
+            Image(systemName: "globe")
+                .foregroundStyle(.blue)
+        } else if entry.sourcePluginID == "firefox"
+            || entry.applicationBundleID == "org.mozilla.firefox"
+        {
+            Image(systemName: "globe")
+                .foregroundStyle(.orange)
+        } else {
+            Image(systemName: "macwindow")
+                .foregroundStyle(.secondary)
+        }
     }
 
     // MARK: - Helpers
@@ -162,90 +409,27 @@ struct UnassignedTimeView: View {
         entries.reduce(0.0) { $0 + $1.effectiveDuration }
     }
 
-    private func pluginLabel(for entry: TimeEntry) -> String {
-        if entry.sourcePluginID == "wakatime" { return "Code" }
-        let meta = parseMetadata(entry.contextMetadata)
-        if let detected = meta["detectedFrom"], !detected.isEmpty {
-            switch detected {
-            case "jira": return "Jira"
-            case "bitbucket": return "Bitbucket"
-            default: break
-            }
-        }
-        if let url = meta["pageURL"] {
-            if url.contains("/browse/") { return "Jira" }
-            if url.contains("/pull-requests/") { return "Bitbucket" }
-        }
-        if let title = meta["pageTitle"]?.lowercased() {
-            if title.contains("pull request") || title.contains("bitbucket") {
-                return "Bitbucket"
-            }
-            if title.contains("jira") { return "Jira" }
-        }
-        switch entry.sourcePluginID {
-        case "chrome": return "Chrome"
-        case "firefox": return "Firefox"
-        default: return entry.source.label
-        }
-    }
-
     private func entryTitle(_ entry: TimeEntry) -> String {
-        if entry.sourcePluginID == "wakatime" {
-            let meta = parseMetadata(entry.contextMetadata)
-            let project = meta["project"] ?? entry.applicationName ?? "Unknown"
-            let branch = meta["branch"] ?? ""
-            if branch.isEmpty { return project }
-            return "\(project) > \(branch)"
+        let meta = parseMetadata(entry.contextMetadata)
+        if let title = meta["pageTitle"], !title.isEmpty {
+            return title
         }
-        if entry.source == .chrome || entry.source == .firefox {
-            if let meta = entry.contextMetadata,
-               let title = extractFromMetadata(meta, key: "pageTitle") {
-                return title
-            }
-        }
-        return entry.applicationName ?? entry.label ?? "Untitled"
+        return entry.label ?? entry.applicationName ?? "Untitled"
     }
 
-    private func extractFromMetadata(_ json: String, key: String) -> String? {
-        guard let data = json.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let value = dict[key] as? String else { return nil }
-        return value
-    }
-
-    private func parseMetadata(_ json: String?) -> [String: String] {
+    private func parseMetadata(
+        _ json: String?
+    ) -> [String: String] {
         guard let json,
               let data = json.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+              let dict = try? JSONSerialization.jsonObject(with: data)
+                  as? [String: Any]
         else { return [:] }
         var result: [String: String] = [:]
         for (key, value) in dict {
             if let str = value as? String { result[key] = str }
         }
         return result
-    }
-
-    @ViewBuilder
-    private func sourceIcon(for entry: TimeEntry) -> some View {
-        let label = pluginLabel(for: entry)
-        switch label {
-        case "Code":
-            Image(systemName: "chevronleft.forwardslash.chevronright")
-                .foregroundStyle(.green)
-                .font(.caption)
-        case "Jira":
-            Image(systemName: "list.clipboard")
-                .foregroundStyle(.blue)
-                .font(.caption)
-        case "Bitbucket":
-            Image(systemName: "arrow.triangle.branch")
-                .foregroundStyle(.blue)
-                .font(.caption)
-        default:
-            Image(systemName: "circle")
-                .foregroundStyle(.secondary)
-                .font(.caption)
-        }
     }
 
     private func timeRange(_ entry: TimeEntry) -> String {
@@ -258,11 +442,114 @@ struct UnassignedTimeView: View {
         return "\(start) – now"
     }
 
-    private func formatDuration(_ interval: TimeInterval) -> String {
+    private func formatDuration(
+        _ interval: TimeInterval
+    ) -> String {
         let totalSeconds = Int(interval)
         let hours = totalSeconds / 3600
         let minutes = (totalSeconds % 3600) / 60
         return String(format: "%dh %02dm", hours, minutes)
+    }
+}
+
+// MARK: - Entry Group
+
+private struct EntryGroup: Identifiable {
+    let key: String
+    let label: String
+    let icon: AnyView
+    let entries: [TimeEntry]
+    let totalDuration: TimeInterval
+    let isWakaTime: Bool
+
+    var id: String { key }
+
+    init(
+        key: String,
+        label: String,
+        icon: some View,
+        entries: [TimeEntry],
+        totalDuration: TimeInterval,
+        isWakaTime: Bool = false
+    ) {
+        self.key = key
+        self.label = label
+        self.icon = AnyView(icon)
+        self.entries = entries
+        self.totalDuration = totalDuration
+        self.isWakaTime = isWakaTime
+    }
+}
+
+// MARK: - Assign Group Button
+
+private struct AssignGroupButton: View {
+    let entryIDs: [PersistentIdentifier]
+    let modelContext: ModelContext
+
+    @State private var showPopover = false
+    @State private var ticketInput = ""
+
+    var body: some View {
+        Button {
+            showPopover = true
+        } label: {
+            Text("Assign")
+                .font(.caption)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.mini)
+        .popover(isPresented: $showPopover) {
+            VStack(spacing: 8) {
+                Text("Assign \(entryIDs.count) entries")
+                    .font(.headline)
+
+                TextField(
+                    "Ticket ID (e.g. PROJ-123)",
+                    text: $ticketInput
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 200)
+                .onSubmit { saveAssignment() }
+
+                HStack {
+                    Button("Cancel") {
+                        showPopover = false
+                        ticketInput = ""
+                    }
+                    .keyboardShortcut(.cancelAction)
+
+                    Button("Save") {
+                        saveAssignment()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(
+                        ticketInput
+                            .trimmingCharacters(in: .whitespaces)
+                            .isEmpty
+                    )
+                }
+            }
+            .padding()
+        }
+    }
+
+    private func saveAssignment() {
+        let trimmed = ticketInput
+            .trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+
+        let service = TimeEntryService(
+            modelContainer: modelContext.container
+        )
+        Task {
+            try? await service.assignTicket(
+                entryIDs: entryIDs, ticketID: trimmed
+            )
+        }
+
+        ticketInput = ""
+        showPopover = false
     }
 }
 
@@ -289,10 +576,13 @@ private struct AssignEntryButton: View {
                 Text("Assign ticket")
                     .font(.headline)
 
-                TextField("Ticket ID (e.g. PROJ-123)", text: $ticketInput)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
-                    .onSubmit { saveAssignment() }
+                TextField(
+                    "Ticket ID (e.g. PROJ-123)",
+                    text: $ticketInput
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 200)
+                .onSubmit { saveAssignment() }
 
                 HStack {
                     Button("Cancel") {
@@ -305,9 +595,11 @@ private struct AssignEntryButton: View {
                         saveAssignment()
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(ticketInput.trimmingCharacters(
-                        in: .whitespaces
-                    ).isEmpty)
+                    .disabled(
+                        ticketInput
+                            .trimmingCharacters(in: .whitespaces)
+                            .isEmpty
+                    )
                 }
             }
             .padding()
@@ -315,11 +607,14 @@ private struct AssignEntryButton: View {
     }
 
     private func saveAssignment() {
-        let trimmed = ticketInput.trimmingCharacters(in: .whitespaces)
+        let trimmed = ticketInput
+            .trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
 
         let entryID = entry.persistentModelID
-        let service = TimeEntryService(modelContainer: modelContext.container)
+        let service = TimeEntryService(
+            modelContainer: modelContext.container
+        )
         Task {
             try? await service.assignTicket(
                 entryIDs: [entryID],

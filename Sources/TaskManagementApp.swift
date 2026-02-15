@@ -22,7 +22,6 @@ struct TaskManagementApp: App {
                 BitbucketLink.self,
                 TimeEntry.self,
                 IntegrationConfig.self,
-                TrackedApplication.self,
                 TicketOverride.self,
                 ExportRecord.self,
                 LearnedPattern.self,
@@ -64,15 +63,6 @@ struct TaskManagementApp: App {
                     coordinator.startTracking()
                 }
                 .keyboardShortcut("t", modifiers: [.command])
-
-                Button("Manual Timer") {
-                    if coordinator.isManualTimerActive {
-                        coordinator.stopManualTimer()
-                    } else {
-                        coordinator.startManualTimer(label: nil)
-                    }
-                }
-                .keyboardShortcut("t", modifiers: [.command, .shift])
             }
         }
 
@@ -87,7 +77,7 @@ struct TaskManagementApp: App {
     }
 
     private func setupPlugins() {
-        let wakaPlugin = WakaTimePlugin(modelContainer: modelContainer)
+        let wakaPlugin = WakaTimePlugin(modelContainer: modelContainer, logService: logService)
         let chromePlugin = ChromePlugin(modelContainer: modelContainer)
         let firefoxPlugin = FirefoxPlugin(modelContainer: modelContainer)
 
