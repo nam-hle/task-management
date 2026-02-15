@@ -2,37 +2,40 @@ import SwiftUI
 import SwiftData
 
 struct TicketsView: View {
-    let wakaTimeService: WakaTimeService
-
     @Environment(\.modelContext) private var modelContext
-    @Query private var overrides: [TicketOverride]
+    @Query(sort: \TimeEntry.startTime, order: .reverse)
+    private var allEntries: [TimeEntry]
+
+    @State private var selectedDate = Date()
+    @State private var showSettings = false
 
     @AppStorage("ticketExcludedProjects") private var excludedProjectsData = Data()
     @AppStorage("ticketUnknownPatterns") private var unknownPatternsData = Data()
 
-    @State private var showSettings = false
-
-    private var excludedProjects: Set<String> {
-        (try? JSONDecoder().decode([String].self, from: excludedProjectsData))
-            .map(Set.init) ?? []
+    private var entriesForDate: [TimeEntry] {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: selectedDate)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+        return allEntries.filter {
+            $0.startTime >= startOfDay && $0.startTime < endOfDay
+                && !$0.isExcluded
+        }
     }
 
-    private var unknownPatterns: [String] {
-        (try? JSONDecoder().decode([String].self, from: unknownPatternsData))
-            ?? []
+    private var tickets: [TicketAggregate] {
+        TicketAggregationService.aggregate(entries: entriesForDate)
     }
 
-    private var tickets: [TicketActivity] {
-        TicketInferenceService.inferTickets(
-            from: wakaTimeService.branches,
-            overrides: overrides,
-            excludedProjects: excludedProjects,
-            unknownPatterns: unknownPatterns
-        )
+    private var assignedTickets: [TicketAggregate] {
+        tickets.filter { $0.ticketID != "unassigned" }
+    }
+
+    private var unassignedTicket: TicketAggregate? {
+        tickets.first { $0.ticketID == "unassigned" }
     }
 
     private var totalDuration: TimeInterval {
-        tickets.reduce(0.0) { $0 + $1.totalDuration }
+        TicketAggregationService.deduplicatedDuration(entries: entriesForDate)
     }
 
     var body: some View {
@@ -43,7 +46,6 @@ struct TicketsView: View {
         }
         .sheet(isPresented: $showSettings) {
             TicketSettingsView(
-                wakaTimeService: wakaTimeService,
                 excludedProjectsData: $excludedProjectsData,
                 unknownPatternsData: $unknownPatternsData
             )
@@ -55,7 +57,7 @@ struct TicketsView: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Today")
+                Text("\(assignedTickets.count) tickets")
                     .font(.headline)
                 Text(formatDuration(totalDuration))
                     .font(.system(.title, design: .monospaced))
@@ -64,18 +66,12 @@ struct TicketsView: View {
 
             Spacer()
 
-            Button {
-                Task {
-                    await wakaTimeService.fetchBranches(for: Date())
-                }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.title3)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Refresh WakaTime data")
-            .disabled(wakaTimeService.isLoading)
+            DatePicker(
+                "Date",
+                selection: $selectedDate,
+                displayedComponents: .date
+            )
+            .labelsHidden()
 
             Button {
                 showSettings = true
@@ -94,65 +90,11 @@ struct TicketsView: View {
 
     @ViewBuilder
     private var content: some View {
-        if !wakaTimeService.isConfigured {
-            notConfiguredState
-        } else if wakaTimeService.isLoading
-            && wakaTimeService.branches.isEmpty
-        {
-            loadingState
-        } else if let error = wakaTimeService.error {
-            errorState(error)
-        } else if wakaTimeService.branches.isEmpty {
+        if entriesForDate.isEmpty {
             emptyState
         } else {
             dataView
         }
-    }
-
-    // MARK: - States
-
-    private var notConfiguredState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "key.slash")
-                .font(.system(size: 48))
-                .foregroundStyle(.quaternary)
-            Text("WakaTime not configured")
-                .foregroundStyle(.secondary)
-            Text("Add your API key to ~/.wakatime.cfg")
-                .font(.callout)
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var loadingState: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-            Text("Loading WakaTime data...")
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func errorState(_ error: WakaTimeError) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 48))
-                .foregroundStyle(.orange)
-            Text("Failed to load data")
-                .foregroundStyle(.secondary)
-            Text(error.errorDescription ?? "Unknown error")
-                .font(.callout)
-                .foregroundStyle(.tertiary)
-            Button("Retry") {
-                Task {
-                    await wakaTimeService.fetchBranches(for: Date())
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyState: some View {
@@ -160,9 +102,9 @@ struct TicketsView: View {
             Image(systemName: "ticket")
                 .font(.system(size: 48))
                 .foregroundStyle(.quaternary)
-            Text("No ticket activity today")
+            Text("No ticket activity")
                 .foregroundStyle(.secondary)
-            Text("WakaTime data will appear here as you code")
+            Text("Time entries will appear here as plugins track your activity")
                 .font(.callout)
                 .foregroundStyle(.tertiary)
         }
@@ -174,14 +116,19 @@ struct TicketsView: View {
     private var dataView: some View {
         ScrollView {
             VStack(spacing: 16) {
-                TicketTimelineChartView(tickets: tickets, date: Date())
+                ticketTimeline
                     .padding(.top, 8)
 
                 Divider()
 
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(tickets) { ticket in
-                        ticketSection(ticket)
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(assignedTickets) { ticket in
+                        TicketDetailView(ticket: ticket)
+                    }
+
+                    if let unassigned = unassignedTicket {
+                        Divider()
+                        UnassignedTimeView(entries: unassigned.entries)
                     }
                 }
             }
@@ -189,53 +136,96 @@ struct TicketsView: View {
         }
     }
 
-    private func ticketSection(_ ticket: TicketActivity) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Ticket header
-            HStack(spacing: 6) {
-                Image(systemName: ticket.ticketID != nil
-                    ? "ticket" : "questionmark.circle")
-                    .foregroundStyle(ticket.ticketID != nil
-                        ? Color.secondary : Color.orange)
-                    .font(.caption)
-                Text(ticket.ticketID ?? "Unknown")
-                    .font(.headline)
-                    .foregroundStyle(
-                        ticket.ticketID != nil ? .primary : .secondary
-                    )
-                Spacer()
+    // MARK: - Timeline
+
+    private var ticketTimeline: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(assignedTickets.prefix(10).enumerated()), id: \.element.id) {
+                index, ticket in
+                let color = ticketColors[index % ticketColors.count]
+                ticketTimelineRow(ticket: ticket, color: color)
+
+                if index < min(assignedTickets.count, 10) - 1 {
+                    Divider().opacity(0.5)
+                }
+            }
+
+            if let unassigned = unassignedTicket {
+                Divider().opacity(0.5)
+                ticketTimelineRow(ticket: unassigned, color: .gray)
+            }
+        }
+    }
+
+    private func ticketTimelineRow(
+        ticket: TicketAggregate, color: Color
+    ) -> some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text(ticket.ticketID == "unassigned"
+                    ? "Unassigned" : ticket.ticketID)
+                    .font(.callout.bold())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(ticket.ticketID == "unassigned"
+                        ? .secondary : .primary)
                 Text(formatDuration(ticket.totalDuration))
                     .font(.system(.callout, design: .monospaced))
                     .foregroundStyle(.secondary)
+                Spacer()
             }
+            .frame(width: 200)
+            .padding(.leading, 8)
 
-            // Branch rows
-            ForEach(ticket.branches) { branch in
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.triangle.branch")
-                        .foregroundStyle(.tertiary)
-                        .font(.caption2)
-                    Text(branch.branch)
-                        .font(.callout)
-                    Text(branch.project)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                    Spacer()
-                    Text(formatDuration(branch.totalDuration))
-                        .font(.system(.callout, design: .monospaced))
-                        .foregroundStyle(.secondary)
+            GeometryReader { geometry in
+                let width = geometry.size.width
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(.quaternary.opacity(0.3))
+                        .frame(height: 14)
 
-                    if ticket.ticketID == nil {
-                        AssignTicketButton(
-                            project: branch.project,
-                            branch: branch.branch,
-                            modelContext: modelContext
-                        )
+                    ForEach(ticket.entries) { entry in
+                        let pos = entryPosition(entry: entry, totalWidth: width)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(color)
+                            .frame(width: max(2, pos.width), height: 14)
+                            .offset(x: pos.offset)
                     }
                 }
-                .padding(.leading, 24)
+                .frame(height: 32)
             }
+            .frame(height: 32)
         }
+    }
+
+    // MARK: - Timeline Helpers
+
+    private let ticketColors: [Color] = [
+        .blue, .green, .orange, .purple, .pink,
+        .cyan, .yellow, .mint, .indigo, .teal,
+    ]
+
+    private struct EntryPosition {
+        let offset: CGFloat
+        let width: CGFloat
+    }
+
+    private func entryPosition(
+        entry: TimeEntry, totalWidth: CGFloat
+    ) -> EntryPosition {
+        let startOfDay = Calendar.current.startOfDay(for: selectedDate)
+        let totalSeconds: Double = 24 * 3600
+
+        let segStart = entry.startTime.timeIntervalSince(startOfDay)
+        let segEnd = (entry.endTime ?? Date()).timeIntervalSince(startOfDay)
+
+        let clampedStart = max(0, min(segStart, totalSeconds))
+        let clampedEnd = max(0, min(segEnd, totalSeconds))
+
+        let xStart = totalWidth * CGFloat(clampedStart / totalSeconds)
+        let xEnd = totalWidth * CGFloat(clampedEnd / totalSeconds)
+
+        return EntryPosition(offset: xStart, width: xEnd - xStart)
     }
 
     // MARK: - Helpers
@@ -245,74 +235,5 @@ struct TicketsView: View {
         let hours = totalSeconds / 3600
         let minutes = (totalSeconds % 3600) / 60
         return String(format: "%dh %02dm", hours, minutes)
-    }
-}
-
-// MARK: - Assign Ticket Button
-
-private struct AssignTicketButton: View {
-    let project: String
-    let branch: String
-    let modelContext: ModelContext
-
-    @State private var showPopover = false
-    @State private var ticketInput = ""
-
-    var body: some View {
-        Button {
-            showPopover = true
-        } label: {
-            Text("Assign")
-                .font(.caption)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.mini)
-        .popover(isPresented: $showPopover) {
-            VStack(spacing: 8) {
-                Text("Assign ticket to \(branch)")
-                    .font(.headline)
-                    .lineLimit(1)
-
-                TextField("Ticket ID (e.g. PROJ-123)", text: $ticketInput)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
-                    .onSubmit {
-                        saveOverride()
-                    }
-
-                HStack {
-                    Button("Cancel") {
-                        showPopover = false
-                        ticketInput = ""
-                    }
-                    .keyboardShortcut(.cancelAction)
-
-                    Button("Save") {
-                        saveOverride()
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(ticketInput.trimmingCharacters(
-                        in: .whitespaces
-                    ).isEmpty)
-                }
-            }
-            .padding()
-        }
-    }
-
-    private func saveOverride() {
-        let trimmed = ticketInput.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-
-        let override = TicketOverride(
-            project: project,
-            branch: branch,
-            ticketID: trimmed
-        )
-        modelContext.insert(override)
-        try? modelContext.save()
-
-        ticketInput = ""
-        showPopover = false
     }
 }

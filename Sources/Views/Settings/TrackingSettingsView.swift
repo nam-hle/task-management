@@ -1,6 +1,8 @@
 import SwiftUI
+import SwiftData
 
 struct TrackingSettingsView: View {
+    @Environment(\.modelContext) private var modelContext
     @AppStorage("idleThresholdSeconds") private var idleThreshold: Double = 300
     @AppStorage("minimumSwitchDuration") private var minSwitchDuration: Double = 30
     @AppStorage("autoSaveInterval") private var autoSaveInterval: Double = 60
@@ -60,8 +62,34 @@ struct TrackingSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
+            Section("Data") {
+                Button("Delete All Time Entries", role: .destructive) {
+                    showDeleteConfirmation = true
+                }
+                .foregroundStyle(.red)
+            }
         }
         .formStyle(.grouped)
+        .confirmationDialog(
+            "Delete All Entries?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete All", role: .destructive) {
+                deleteAllEntries()
+            }
+        } message: {
+            Text("This will permanently delete all time entries. This cannot be undone.")
+        }
+    }
+
+    @State private var showDeleteConfirmation = false
+
+    private func deleteAllEntries() {
+        let service = TimeEntryService(modelContainer: modelContext.container)
+        Task {
+            try? await service.deleteAll()
+        }
     }
 
     private func formatDuration(_ seconds: Double) -> String {

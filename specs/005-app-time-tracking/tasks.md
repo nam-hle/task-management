@@ -112,15 +112,15 @@
 
 **Independent Test**: Generate sample entries, merge two, split one, adjust a duration, add a note — verify all changes persist.
 
-- [ ] T031 [US3] Add `edited` case to `EntrySource` in `Sources/Models/Enums.swift` + create `TimeEntryChanges` struct
-- [ ] T032 [US3] Extend TimeEntryService with merge in `Sources/Services/TimeEntryService.swift` — `merge(entryIDs:)`: combine N entries into one with summed duration, earliest startTime, latest endTime, concatenated notes. Delete merged entries, return new entry ID.
-- [ ] T033 [US3] Extend TimeEntryService with split — `split(entryID:, at splitTime:)`: create two entries from one, first entry ends at splitTime, second starts at splitTime. Both retain original context (applicationName, todo link).
-- [ ] T034 [US3] Extend TimeEntryService with edit — `update(entryID:, changes:)`: update startTime, endTime (recalculate duration), notes, todo link, bookingStatus. Mark source as `.edited` if times changed.
-- [ ] T035 [US3] Extend TimeEntryService with review — `markReviewed(entryIDs:)`: bulk update bookingStatus from `.unreviewed` to `.reviewed`.
-- [ ] T036 [P] [US3] Create TimeEntryListView in `Sources/Views/TimeTracking/TimeEntryListView.swift` — list all entries for selected date, support multi-selection. Toolbar actions: "Merge Selected", "Mark Reviewed", "Mark All Reviewed". Date picker to navigate days. Show review status badges.
-- [ ] T037 [P] [US3] Create TimeEntryDetailView in `Sources/Views/TimeTracking/TimeEntryDetailView.swift` — edit form: start time picker, end time picker (auto-recalculates duration), notes TextEditor, todo picker (link/unlink), booking status display. "Split at Time" action with time picker. Source indicator (auto/manual/edited).
-- [ ] T038 [US3] Add review status badges to TimeEntryRow in `Sources/Views/TimeTracking/TimeEntryRow.swift` — reviewed (green checkmark), exported (blue arrow), booked (seal). Handle `.edited` source case.
-- [ ] T039 [US3] Add "Entries" tab to TimeTrackingDashboard in `Sources/Views/TimeTracking/TimeTrackingDashboard.swift`
+- [x] T031 [US3] Add `edited` case to `EntrySource` in `Sources/Models/Enums.swift` + create `TimeEntryChanges` struct
+- [x] T032 [US3] Extend TimeEntryService with merge in `Sources/Services/TimeEntryService.swift` — `merge(entryIDs:)`: combine N entries into one with summed duration, earliest startTime, latest endTime, concatenated notes. Delete merged entries, return new entry ID.
+- [x] T033 [US3] Extend TimeEntryService with split — `split(entryID:, at splitTime:)`: create two entries from one, first entry ends at splitTime, second starts at splitTime. Both retain original context (applicationName, todo link).
+- [x] T034 [US3] Extend TimeEntryService with edit — `update(entryID:, changes:)`: update startTime, endTime (recalculate duration), notes, todo link, bookingStatus. Mark source as `.edited` if times changed.
+- [x] T035 [US3] Extend TimeEntryService with review — `markReviewed(entryIDs:)`: bulk update bookingStatus from `.unreviewed` to `.reviewed`.
+- [x] T036 [P] [US3] Create TimeEntryListView in `Sources/Views/TimeTracking/TimeEntryListView.swift` — list all entries for selected date, support multi-selection. Toolbar actions: "Merge Selected", "Mark Reviewed", "Mark All Reviewed". Date picker to navigate days. Show review status badges.
+- [x] T037 [P] [US3] Create TimeEntryDetailView in `Sources/Views/TimeTracking/TimeEntryDetailView.swift` — edit form: start time picker, end time picker (auto-recalculates duration), notes TextEditor, todo picker (link/unlink), booking status display. "Split at Time" action with time picker. Source indicator (auto/manual/edited).
+- [x] T038 [US3] Add review status badges to TimeEntryRow in `Sources/Views/TimeTracking/TimeEntryRow.swift` — reviewed (green checkmark), exported (blue arrow), booked (seal). Handle `.edited` source case.
+- [x] T039 [US3] Add "Entries" tab to TimeTrackingDashboard in `Sources/Views/TimeTracking/TimeTrackingDashboard.swift`
 
 **Checkpoint**: Full review workflow functional. Merge, split, edit, mark reviewed all working.
 
@@ -132,10 +132,10 @@
 
 **Independent Test**: Prepare reviewed entries, trigger export, verify formatted output is correct and copyable.
 
-- [ ] T040 [P] [US5] Create ExportRecord `@Model` in `Sources/Models/ExportRecord.swift` — fields: id, exportedAt, formattedOutput, entryCount, totalDuration, isBooked, bookedAt?, timeEntryIDs (UUID array). Register in ModelContainer.
-- [ ] T041 [US5] Implement ExportService in `Sources/Services/ExportService.swift` — `@ModelActor`, `generateExport(for date:)`: fetch reviewed entries for date, group by todo/app/label, format as text with per-group durations and daily total. `checkDuplicates()`, `confirmExport()`, `markBooked()`.
-- [ ] T042 [P] [US5] Create ExportView in `Sources/Views/TimeTracking/ExportView.swift` — date picker, Generate button, monospace preview, Copy to Clipboard, Mark as Booked. Duplicate warning alert.
-- [ ] T043 [US5] Add "Export" tab to TimeTrackingDashboard in `Sources/Views/TimeTracking/TimeTrackingDashboard.swift`
+- [x] T040 [P] [US5] Create ExportRecord `@Model` in `Sources/Models/ExportRecord.swift` — fields: id, exportedAt, formattedOutput, entryCount, totalDuration, isBooked, bookedAt?, timeEntryIDs (UUID array). Register in ModelContainer.
+- [x] T041 [US5] Implement ExportService in `Sources/Services/ExportService.swift` — `@ModelActor`, `generateExport(for date:)`: fetch reviewed entries for date, group by todo/app/label, format as text with per-group durations and daily total. `checkDuplicates()`, `confirmExport()`, `markBooked()`.
+- [x] T042 [P] [US5] Create ExportView in `Sources/Views/TimeTracking/ExportView.swift` — date picker, Generate button, monospace preview, Copy to Clipboard, Mark as Booked. Duplicate warning alert.
+- [x] T043 [US5] Add "Export" tab to TimeTrackingDashboard in `Sources/Views/TimeTracking/TimeTrackingDashboard.swift`
 
 **Checkpoint**: Export workflow complete. Copy-ready text generated, duplicates prevented, booking tracked.
 
@@ -145,9 +145,9 @@
 
 **Purpose**: Credential management and integration configuration UI. (HTTPClient, JiraAPI, BitbucketAPI, API enrichment deferred — not needed without browser context.)
 
-- [ ] T044 [P] Implement KeychainService in `Sources/Services/KeychainService.swift` — Security framework wrapper: `store(key:, value:, service:)`, `retrieve(key:, service:)`, `delete(key:, service:)` using `SecItemAdd`/`SecItemCopyMatching`/`SecItemDelete`.
-- [ ] T045 [P] Create IntegrationSettingsView in `Sources/Views/Settings/IntegrationSettingsView.swift` — configure Jira (URL, username, token), Bitbucket (URL, username, token), WakaTime status display. Store tokens in Keychain via KeychainService.
-- [ ] T046 Add "Integrations" tab to SettingsView in `Sources/Views/Settings/SettingsView.swift`
+- [x] T044 [P] Implement KeychainService in `Sources/Services/KeychainService.swift` — Security framework wrapper: `store(key:, value:, service:)`, `retrieve(key:, service:)`, `delete(key:, service:)` using `SecItemAdd`/`SecItemCopyMatching`/`SecItemDelete`.
+- [x] T045 [P] Create IntegrationSettingsView in `Sources/Views/Settings/IntegrationSettingsView.swift` — configure Jira (URL, username, token), Bitbucket (URL, username, token), WakaTime status display. Store tokens in Keychain via KeychainService.
+- [x] T046 Add "Integrations" tab to SettingsView in `Sources/Views/Settings/SettingsView.swift`
 
 **Checkpoint**: Keychain storage working, integration credentials configurable.
 
@@ -157,15 +157,15 @@
 
 **Purpose**: Learn from user reviews to auto-approve recurring patterns on subsequent days
 
-- [ ] T047 [P] Create LearnedPattern `@Model` in `Sources/Models/LearnedPattern.swift` — fields: id, contextType, identifierValue, linkedTodo?, confirmationCount, lastConfirmedAt, isActive, createdAt. Register in ModelContainer.
-- [ ] T048 Add `isAutoApproved: Bool` and `learnedPattern: LearnedPattern?` fields to TimeEntry in `Sources/Models/TimeEntry.swift`
-- [ ] T049 Implement LearnedPatternService in `Sources/Services/LearnedPatternService.swift` — `@ModelActor`, `findMatch(contextType:, identifier:)`, `learnFromReview(contextType:, identifier:, todoID:)`, `revoke(patternID:)`, `flagStalePatterns()`, `linkedTodoID(for:)`
-- [ ] T050 Integrate auto-approval into TimeEntryService — `applyAutoApproval(entryID:, patternID:, todoID:)` in `Sources/Services/TimeEntryService.swift`
-- [ ] T051 Integrate auto-approval into TrackingCoordinator — after creating entry, check LearnedPatternService for match in `Sources/Services/TrackingCoordinator.swift`
-- [ ] T052 Trigger learning on manual review in TimeEntryListView — when user marks reviewed + entry has todo + bundleID → `learnFromReview()`
-- [ ] T053 [P] Create LearnedPatternsView in `Sources/Views/Settings/LearnedPatternsView.swift` — list patterns, show context/identifier/todo/count, Revoke button, stale warnings
-- [ ] T054 Add "Learned Patterns" tab to SettingsView in `Sources/Views/Settings/SettingsView.swift`
-- [ ] T055 Add auto-approved badge (sparkle icon) to TimeEntryRow for `isAutoApproved` entries in `Sources/Views/TimeTracking/TimeEntryRow.swift`
+- [x] T047 [P] Create LearnedPattern `@Model` in `Sources/Models/LearnedPattern.swift` — fields: id, contextType, identifierValue, linkedTodo?, confirmationCount, lastConfirmedAt, isActive, createdAt. Register in ModelContainer.
+- [x] T048 Add `isAutoApproved: Bool` and `learnedPattern: LearnedPattern?` fields to TimeEntry in `Sources/Models/TimeEntry.swift`
+- [x] T049 Implement LearnedPatternService in `Sources/Services/LearnedPatternService.swift` — `@ModelActor`, `findMatch(contextType:, identifier:)`, `learnFromReview(contextType:, identifier:, todoID:)`, `revoke(patternID:)`, `flagStalePatterns()`, `linkedTodoID(for:)`
+- [x] T050 Integrate auto-approval into TimeEntryService — `applyAutoApproval(entryID:, patternID:, todoID:)` in `Sources/Services/TimeEntryService.swift`
+- [x] T051 Integrate auto-approval into TimeEntryService — after creating entry, check LearnedPattern for matching bundleID in `Sources/Services/TimeEntryService.swift`
+- [x] T052 Trigger learning on manual review in TimeEntryListView — when user marks reviewed + entry has todo + bundleID → `learnFromReview()`
+- [x] T053 [P] Create LearnedPatternsView in `Sources/Views/Settings/LearnedPatternsView.swift` — list patterns, show context/identifier/todo/count, Revoke button, stale warnings
+- [x] T054 Add "Learned Patterns" tab to SettingsView in `Sources/Views/Settings/SettingsView.swift`
+- [x] T055 Add auto-approved badge (sparkle icon) to TimeEntryRow for `isAutoApproved` entries in `Sources/Views/TimeTracking/TimeEntryRow.swift`
 
 **Checkpoint**: Learned patterns functional. Confirmed reviews create patterns, subsequent matching entries auto-approved.
 
@@ -175,9 +175,9 @@
 
 **Purpose**: Final quality pass across all features
 
-- [ ] T056 Implement data retention in TimeEntryService — `purgeExpired(retentionDays: 90)`: delete booked entries older than 90 days. Run on app launch via `Sources/TaskManagementApp.swift`.
-- [ ] T057 [P] Add keyboard shortcuts — Cmd+T: toggle tracking, Cmd+Shift+T: manual timer. Register via `.commands {}` on WindowGroup in `Sources/TaskManagementApp.swift`.
-- [ ] T058 Run `swift build` with zero warnings, resolve all strict concurrency issues for Swift 6
+- [x] T056 Implement data retention in TimeEntryService — `purgeExpired(retentionDays: 90)`: delete booked entries older than 90 days. Run on app launch via `Sources/TaskManagementApp.swift`.
+- [x] T057 [P] Add keyboard shortcuts — Cmd+T: toggle tracking, Cmd+Shift+T: manual timer. Register via `.commands {}` on WindowGroup in `Sources/TaskManagementApp.swift`.
+- [x] T058 Run `swift build` with zero warnings, resolve all strict concurrency issues for Swift 6
 
 ---
 

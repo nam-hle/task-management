@@ -3,13 +3,14 @@ import SwiftData
 
 struct TimeEntryListView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \TimeEntry.startTime, order: .forward)
+    @Query(sort: \TimeEntry.startTime, order: .reverse)
     private var allEntries: [TimeEntry]
 
     @State private var selectedDate = Date()
     @State private var selectedEntries: Set<PersistentIdentifier> = []
     @State private var detailEntry: TimeEntry?
     @State private var errorMessage: String?
+    @State private var showExcluded = false
 
     private var entriesForDate: [TimeEntry] {
         let calendar = Calendar.current
@@ -17,11 +18,12 @@ struct TimeEntryListView: View {
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
         return allEntries.filter {
             $0.startTime >= startOfDay && $0.startTime < endOfDay
+                && (showExcluded || !$0.isExcluded)
         }
     }
 
     private var dailyTotal: TimeInterval {
-        entriesForDate.reduce(0.0) { $0 + $1.effectiveDuration }
+        entriesForDate.filter { !$0.isExcluded }.reduce(0.0) { $0 + $1.effectiveDuration }
     }
 
     var body: some View {
@@ -111,11 +113,27 @@ struct TimeEntryListView: View {
 
             Spacer()
 
+            Toggle(isOn: $showExcluded) {
+                Label("Show Excluded", systemImage: "eye.slash")
+            }
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
+
             if selectedEntries.count >= 2 {
                 Button {
                     mergeSelected()
                 } label: {
                     Label("Merge Selected", systemImage: "arrow.triangle.merge")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            if !selectedEntries.isEmpty {
+                Button {
+                    toggleExcludeSelected()
+                } label: {
+                    Label("Exclude", systemImage: "eye.slash")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -200,6 +218,15 @@ struct TimeEntryListView: View {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func toggleExcludeSelected() {
+        let ids = selectedEntries
+        for entry in entriesForDate where ids.contains(entry.persistentModelID) {
+            entry.isExcluded.toggle()
+        }
+        try? modelContext.save()
+        selectedEntries.removeAll()
     }
 
     private func markAllReviewed() {

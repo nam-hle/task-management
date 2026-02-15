@@ -23,7 +23,10 @@ actor TimeEntryService {
         applicationBundleID: String? = nil,
         source: EntrySource = .autoDetected,
         startTime: Date = Date(),
-        label: String? = nil
+        label: String? = nil,
+        sourcePluginID: String? = nil,
+        ticketID: String? = nil,
+        contextMetadata: String? = nil
     ) throws -> PersistentIdentifier {
         let entry = TimeEntry(
             startTime: startTime,
@@ -31,13 +34,45 @@ actor TimeEntryService {
             isInProgress: true,
             applicationName: applicationName,
             applicationBundleID: applicationBundleID,
-            label: label
+            label: label,
+            sourcePluginID: sourcePluginID,
+            ticketID: ticketID,
+            contextMetadata: contextMetadata
         )
         if let todoID, let todo = modelContext.model(for: todoID) as? Todo {
             entry.todo = todo
         }
         modelContext.insert(entry)
         try modelContext.save()
+        checkAutoApproval(for: entry)
+        return entry.persistentModelID
+    }
+
+    func createFinalized(
+        startTime: Date,
+        endTime: Date,
+        source: EntrySource,
+        applicationName: String? = nil,
+        sourcePluginID: String? = nil,
+        ticketID: String? = nil,
+        contextMetadata: String? = nil
+    ) throws -> PersistentIdentifier {
+        let duration = endTime.timeIntervalSince(startTime)
+        guard duration > 0 else { return try create(startTime: startTime) }
+        let entry = TimeEntry(
+            startTime: startTime,
+            endTime: endTime,
+            duration: duration,
+            source: source,
+            isInProgress: false,
+            applicationName: applicationName,
+            sourcePluginID: sourcePluginID,
+            ticketID: ticketID,
+            contextMetadata: contextMetadata
+        )
+        modelContext.insert(entry)
+        try modelContext.save()
+        checkAutoApproval(for: entry)
         return entry.persistentModelID
     }
 
@@ -239,6 +274,11 @@ actor TimeEntryService {
         if let newStatus = changes.bookingStatus {
             entry.bookingStatus = newStatus
         }
+        if changes.removeTicketID {
+            entry.ticketID = nil
+        } else if let newTicketID = changes.ticketID {
+            entry.ticketID = newTicketID
+        }
 
         try modelContext.save()
     }
@@ -255,7 +295,40 @@ actor TimeEntryService {
         try modelContext.save()
     }
 
+    func assignTicket(
+        entryIDs: [PersistentIdentifier],
+        ticketID: String
+    ) throws {
+        for entryID in entryIDs {
+            guard let entry = modelContext.model(for: entryID) as? TimeEntry else {
+                continue
+            }
+            entry.ticketID = ticketID
+        }
+        try modelContext.save()
+    }
+
     // MARK: - Auto-Approval (Phase 8)
+
+    private func checkAutoApproval(for entry: TimeEntry) {
+        guard let bundleID = entry.applicationBundleID else { return }
+
+        let contextType = "bundleID"
+        let predicate = #Predicate<LearnedPattern> {
+            $0.contextType == contextType
+                && $0.identifierValue == bundleID
+                && $0.isActive == true
+        }
+        let descriptor = FetchDescriptor<LearnedPattern>(predicate: predicate)
+        guard let pattern = try? modelContext.fetch(descriptor).first,
+              let todo = pattern.linkedTodo else { return }
+
+        entry.isAutoApproved = true
+        entry.learnedPattern = pattern
+        entry.todo = todo
+        entry.bookingStatus = .reviewed
+        try? modelContext.save()
+    }
 
     func applyAutoApproval(
         entryID: PersistentIdentifier,
@@ -306,6 +379,15 @@ actor TimeEntryService {
             try modelContext.save()
         }
         return count
+    }
+
+    func deleteAll() throws {
+        let descriptor = FetchDescriptor<TimeEntry>()
+        let entries = try modelContext.fetch(descriptor)
+        for entry in entries {
+            modelContext.delete(entry)
+        }
+        try modelContext.save()
     }
 
     // MARK: - Seeding

@@ -18,6 +18,14 @@ final class TimeEntry {
     var applicationBundleID: String?
     var label: String?
 
+    // 006: Plugin system fields
+    var sourcePluginID: String? = nil
+    var ticketID: String? = nil
+    var contextMetadata: String? = nil
+
+    // Exclusion
+    var isExcluded: Bool = false
+
     // 008: Learned patterns
     var isAutoApproved: Bool = false
     var learnedPattern: LearnedPattern?
@@ -54,7 +62,10 @@ final class TimeEntry {
         applicationName: String? = nil,
         applicationBundleID: String? = nil,
         label: String? = nil,
-        isAutoApproved: Bool = false
+        isAutoApproved: Bool = false,
+        sourcePluginID: String? = nil,
+        ticketID: String? = nil,
+        contextMetadata: String? = nil
     ) {
         self.id = UUID()
         self.startTime = startTime
@@ -70,5 +81,8 @@ final class TimeEntry {
         self.applicationBundleID = applicationBundleID
         self.label = label
         self.isAutoApproved = isAutoApproved
+        self.sourcePluginID = sourcePluginID
+        self.ticketID = ticketID
+        self.contextMetadata = contextMetadata
     }
 }

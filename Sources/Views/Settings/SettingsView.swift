@@ -3,6 +3,11 @@ import SwiftUI
 struct SettingsView: View {
     var body: some View {
         TabView {
+            PluginSettingsView()
+                .tabItem {
+                    Label("Plugins", systemImage: "puzzlepiece.extension")
+                }
+
             TrackedAppsSettingsView()
                 .tabItem {
                     Label("Tracked Apps", systemImage: "app.badge.checkmark")

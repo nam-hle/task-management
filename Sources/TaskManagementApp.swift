@@ -1,13 +1,12 @@
 import SwiftUI
 import SwiftData
-import ApplicationServices
 
 @main
 struct TaskManagementApp: App {
     let modelContainer: ModelContainer
 
     @State private var coordinator: TrackingCoordinator
-    @State private var showAccessibilityPermission = false
+    @State private var pluginManager = PluginManager()
 
     init() {
         do {
@@ -37,34 +36,18 @@ struct TaskManagementApp: App {
         WindowGroup(id: "main") {
             ContentView()
                 .environment(coordinator)
-                .overlay {
-                    if showAccessibilityPermission {
-                        AccessibilityPermissionView {
-                            showAccessibilityPermission = false
-                            coordinator.startTracking()
-                        }
-                    }
-                }
                 .onAppear {
-                    seedDataIfNeeded()
+                    setupPlugins()
                     purgeExpiredData()
                     coordinator.recoverFromCrash()
-                    if AXIsProcessTrusted() {
-                        coordinator.startTracking()
-                    } else {
-                        showAccessibilityPermission = true
-                    }
+                    coordinator.startTracking()
                 }
         }
         .modelContainer(modelContainer)
         .commands {
             CommandMenu("Tracking") {
                 Button("Toggle Tracking") {
-                    if case .tracking = coordinator.state {
-                        coordinator.stopTracking()
-                    } else {
-                        coordinator.startTracking()
-                    }
+                    coordinator.startTracking()
                 }
                 .keyboardShortcut("t", modifiers: [.command])
 
@@ -79,47 +62,22 @@ struct TaskManagementApp: App {
             }
         }
 
-        MenuBarExtra {
-            MenuBarView()
-                .environment(coordinator)
-                .modelContainer(modelContainer)
-        } label: {
-            Label(
-                menuBarText,
-                systemImage: coordinator.state == .tracking ? "timer" : "checklist"
-            )
-        }
-        .menuBarExtraStyle(.window)
-
         Settings {
             SettingsView()
                 .modelContainer(modelContainer)
         }
     }
 
-    private var menuBarText: String {
-        if case .tracking = coordinator.state,
-           let appName = coordinator.currentAppName {
-            return "\(formatElapsed(coordinator.elapsedSeconds)) - \(appName)"
-        }
-        return "Tasks"
-    }
+    private func setupPlugins() {
+        let wakaPlugin = WakaTimePlugin(modelContainer: modelContainer)
+        let chromePlugin = ChromePlugin(modelContainer: modelContainer)
+        let firefoxPlugin = FirefoxPlugin(modelContainer: modelContainer)
 
-    private func formatElapsed(_ seconds: Int) -> String {
-        let hours = seconds / 3600
-        let minutes = (seconds % 3600) / 60
-        let secs = seconds % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, secs)
-        }
-        return String(format: "%d:%02d", minutes, secs)
-    }
+        pluginManager.register(wakaPlugin)
+        pluginManager.register(chromePlugin)
+        pluginManager.register(firefoxPlugin)
 
-    private func seedDataIfNeeded() {
-        let service = TimeEntryService(modelContainer: modelContainer)
-        Task {
-            try? await service.seedTrackedApplicationsIfNeeded()
-        }
+        coordinator.setPluginManager(pluginManager)
     }
 
     private func purgeExpiredData() {

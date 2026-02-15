@@ -19,6 +19,7 @@ actor ExportService {
             $0.startTime >= startOfDay
                 && $0.startTime < endOfDay
                 && $0.bookingStatus == reviewedStatus
+                && $0.isExcluded == false
         }
         let descriptor = FetchDescriptor<TimeEntry>(
             predicate: predicate,
@@ -34,16 +35,21 @@ actor ExportService {
             )
         }
 
-        // Group by: todo title > app name > label
-        var groups: [(key: String, duration: TimeInterval)] = []
+        // Group by: ticketID > todo title > app name > label
         var grouped: [String: TimeInterval] = [:]
 
         for entry in entries {
             let key: String
-            if let todo = entry.todo {
+            if let ticketID = entry.ticketID {
+                key = ticketID
+            } else if let todo = entry.todo {
                 key = todo.title
             } else if let appName = entry.applicationName {
-                key = appName
+                if let source = entry.sourcePluginID {
+                    key = "\(appName) (\(source))"
+                } else {
+                    key = appName
+                }
             } else if let label = entry.label {
                 key = label
             } else {
@@ -52,7 +58,7 @@ actor ExportService {
             grouped[key, default: 0] += entry.duration
         }
 
-        groups = grouped
+        let groups = grouped
             .sorted { $0.value > $1.value }
             .map { (key: $0.key, duration: $0.value) }
 

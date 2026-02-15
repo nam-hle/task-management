@@ -88,6 +88,57 @@ enum TicketInferenceService {
         return results
     }
 
+    // MARK: - Unified Resolution (006: Plugin system)
+
+    static func resolveTicketID(
+        branch: String?,
+        pageTitle: String?,
+        pageURL: String?,
+        appName: String?,
+        overrides: [TicketOverride]
+    ) -> String? {
+        // Sort overrides by priority descending
+        let sorted = overrides.sorted { $0.priority > $1.priority }
+
+        // 1. Check override rules
+        for override in sorted {
+            // Match by branch
+            if let branch, !override.branch.isEmpty,
+               branch == override.branch || branch.contains(override.branch) {
+                return override.ticketID
+            }
+            // Match by URL pattern
+            if let pageURL, let urlPattern = override.urlPattern, !urlPattern.isEmpty,
+               let regex = try? Regex(urlPattern),
+               pageURL.firstMatch(of: regex) != nil {
+                return override.ticketID
+            }
+            // Match by app name pattern
+            if let appName, let appPattern = override.appNamePattern, !appPattern.isEmpty,
+               let regex = try? Regex(appPattern),
+               appName.firstMatch(of: regex) != nil {
+                return override.ticketID
+            }
+        }
+
+        // 2. Extract from branch name
+        if let branch, let ticket = extractTicketID(from: branch) {
+            return ticket
+        }
+
+        // 3. Extract from page title
+        if let pageTitle, let ticket = extractTicketID(from: pageTitle) {
+            return ticket
+        }
+
+        // 4. Extract from URL
+        if let pageURL, let ticket = extractTicketID(from: pageURL) {
+            return ticket
+        }
+
+        return nil
+    }
+
     private static func extractTicketID(from branch: String) -> String? {
         guard let match = branch.firstMatch(of: ticketPattern) else {
             return nil

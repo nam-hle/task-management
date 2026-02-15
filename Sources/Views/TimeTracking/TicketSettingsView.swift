@@ -1,40 +1,40 @@
 import SwiftUI
+import SwiftData
 
 struct TicketSettingsView: View {
-    let wakaTimeService: WakaTimeService
-
     @Binding var excludedProjectsData: Data
     @Binding var unknownPatternsData: Data
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query private var overrides: [TicketOverride]
 
     @State private var newPattern = ""
     @State private var patternError: String?
 
+    // New override form
+    @State private var showAddOverride = false
+    @State private var newTicketID = ""
+    @State private var newBranch = ""
+    @State private var newURLPattern = ""
+    @State private var newAppPattern = ""
+    @State private var newPriority = 0
+    @State private var overrideError: String?
+
     private var excludedProjects: Set<String> {
-        get {
-            (try? JSONDecoder().decode(
-                [String].self, from: excludedProjectsData
-            )).map(Set.init) ?? []
-        }
+        (try? JSONDecoder().decode(
+            [String].self, from: excludedProjectsData
+        )).map(Set.init) ?? []
     }
 
     private var unknownPatterns: [String] {
-        get {
-            (try? JSONDecoder().decode(
-                [String].self, from: unknownPatternsData
-            )) ?? []
-        }
-    }
-
-    private var allProjects: [String] {
-        let projects = Set(wakaTimeService.branches.map(\.project))
-        return projects.sorted()
+        (try? JSONDecoder().decode(
+            [String].self, from: unknownPatternsData
+        )) ?? []
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Title bar
             HStack {
                 Text("Ticket Settings")
                     .font(.headline)
@@ -47,49 +47,116 @@ struct TicketSettingsView: View {
             Divider()
 
             Form {
-                excludedProjectsSection
+                overridesSection
                 unknownPatternsSection
             }
             .formStyle(.grouped)
         }
-        .frame(width: 450, height: 400)
+        .frame(width: 500, height: 500)
     }
 
-    // MARK: - Excluded Projects
+    // MARK: - Overrides
 
-    private var excludedProjectsSection: some View {
+    private var overridesSection: some View {
         Section {
-            if allProjects.isEmpty {
-                Text("No projects found in today's data")
+            if overrides.isEmpty {
+                Text("No ticket overrides configured")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(allProjects, id: \.self) { project in
-                    Toggle(project, isOn: projectBinding(for: project))
+                ForEach(
+                    overrides.sorted { $0.priority > $1.priority }
+                ) { override in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(override.ticketID)
+                                .font(.headline)
+                            if override.priority > 0 {
+                                Text("P\(override.priority)")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            Spacer()
+                            Button {
+                                modelContext.delete(override)
+                                try? modelContext.save()
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if !override.branch.isEmpty {
+                            Text("Branch: \(override.branch)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let urlPattern = override.urlPattern,
+                           !urlPattern.isEmpty {
+                            Text("URL: \(urlPattern)")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        if let appPattern = override.appNamePattern,
+                           !appPattern.isEmpty {
+                            Text("App: \(appPattern)")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
+            Button {
+                showAddOverride.toggle()
+            } label: {
+                Label("Add Override", systemImage: "plus")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            if showAddOverride {
+                addOverrideForm
+            }
         } header: {
-            Text("Excluded Projects")
+            Text("Ticket Override Rules")
         } footer: {
-            Text("Toggled projects will be hidden from the Tickets view.")
+            Text("Override rules assign tickets to entries matching branch, URL, or app patterns.")
                 .foregroundStyle(.tertiary)
         }
     }
 
-    private func projectBinding(for project: String) -> Binding<Bool> {
-        Binding(
-            get: { excludedProjects.contains(project) },
-            set: { isExcluded in
-                var current = excludedProjects
-                if isExcluded {
-                    current.insert(project)
-                } else {
-                    current.remove(project)
-                }
-                if let data = try? JSONEncoder().encode(Array(current)) {
-                    excludedProjectsData = data
-                }
+    private var addOverrideForm: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Ticket ID (e.g. PROJ-123)", text: $newTicketID)
+                .textFieldStyle(.roundedBorder)
+            TextField("Branch pattern (optional)", text: $newBranch)
+                .textFieldStyle(.roundedBorder)
+            TextField("URL regex (optional)", text: $newURLPattern)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+            TextField("App name regex (optional)", text: $newAppPattern)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+            Stepper("Priority: \(newPriority)", value: $newPriority, in: 0...100)
+
+            if let overrideError {
+                Text(overrideError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
             }
-        )
+
+            HStack {
+                Button("Cancel") {
+                    resetOverrideForm()
+                }
+                Button("Save") {
+                    saveOverride()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(newTicketID.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - Unknown Patterns
@@ -145,11 +212,54 @@ struct TicketSettingsView: View {
         }
     }
 
+    private func saveOverride() {
+        let ticket = newTicketID.trimmingCharacters(in: .whitespaces)
+        guard !ticket.isEmpty else { return }
+
+        // Validate regex patterns
+        if !newURLPattern.isEmpty {
+            do { _ = try Regex(newURLPattern) }
+            catch {
+                overrideError = "Invalid URL regex: \(error.localizedDescription)"
+                return
+            }
+        }
+        if !newAppPattern.isEmpty {
+            do { _ = try Regex(newAppPattern) }
+            catch {
+                overrideError = "Invalid app regex: \(error.localizedDescription)"
+                return
+            }
+        }
+
+        let override = TicketOverride(
+            project: "",
+            branch: newBranch.trimmingCharacters(in: .whitespaces),
+            ticketID: ticket
+        )
+        override.urlPattern = newURLPattern.isEmpty ? nil : newURLPattern
+        override.appNamePattern = newAppPattern.isEmpty ? nil : newAppPattern
+        override.priority = newPriority
+
+        modelContext.insert(override)
+        try? modelContext.save()
+        resetOverrideForm()
+    }
+
+    private func resetOverrideForm() {
+        showAddOverride = false
+        newTicketID = ""
+        newBranch = ""
+        newURLPattern = ""
+        newAppPattern = ""
+        newPriority = 0
+        overrideError = nil
+    }
+
     private func addPattern() {
         let trimmed = newPattern.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
 
-        // Validate regex
         do {
             _ = try Regex(trimmed)
         } catch {

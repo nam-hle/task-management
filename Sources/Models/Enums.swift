@@ -49,6 +49,8 @@ enum EntrySource: String, Codable, CaseIterable, Identifiable {
     case autoDetected
     case wakatime
     case edited
+    case chrome
+    case firefox
 
     var id: String { rawValue }
 
@@ -59,9 +61,32 @@ enum EntrySource: String, Codable, CaseIterable, Identifiable {
         case .autoDetected: "Auto-Detected"
         case .wakatime: "WakaTime"
         case .edited: "Edited"
+        case .chrome: "Chrome"
+        case .firefox: "Firefox"
         }
     }
 }
+
+// MARK: - Plugin Status
+
+enum PluginStatus: Equatable {
+    case active
+    case inactive
+    case error(String)
+    case permissionRequired
+    case unavailable
+
+    var label: String {
+        switch self {
+        case .active: "Active"
+        case .inactive: "Inactive"
+        case .error: "Error"
+        case .permissionRequired: "Permission Required"
+        case .unavailable: "Unavailable"
+        }
+    }
+}
+
 
 struct TimeEntryChanges {
     var startTime: Date?
@@ -70,21 +95,8 @@ struct TimeEntryChanges {
     var todoID: PersistentIdentifier?
     var removeTodo: Bool = false
     var bookingStatus: BookingStatus?
-}
-
-enum TrackingState: Equatable {
-    case idle
-    case tracking
-    case paused(reason: PauseReason)
-    case permissionRequired
-}
-
-enum PauseReason: String, Codable, Equatable {
-    case userPaused
-    case systemIdle
-    case systemSleep
-    case screenLocked
-    case manualTimerActive
+    var ticketID: String?
+    var removeTicketID: Bool = false
 }
 
 enum IntegrationType: String, Codable, CaseIterable, Identifiable {
