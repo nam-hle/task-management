@@ -9,6 +9,7 @@ struct TaskManagementApp: App {
     @State private var coordinator: TrackingCoordinator
     @State private var pluginManager = PluginManager()
     @State private var jiraService: JiraService
+    @State private var bitbucketService: BitbucketService
     @State private var logService = LogService()
 
     init() {
@@ -33,6 +34,7 @@ struct TaskManagementApp: App {
             let log = LogService()
             _logService = State(initialValue: log)
             _jiraService = State(initialValue: JiraService(modelContainer: container, logService: log))
+            _bitbucketService = State(initialValue: BitbucketService(modelContainer: container, logService: log))
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }
@@ -43,6 +45,7 @@ struct TaskManagementApp: App {
             ContentView()
                 .environment(coordinator)
                 .environment(\.jiraService, jiraService)
+                .environment(\.bitbucketService, bitbucketService)
                 .environment(\.logService, logService)
                 .onAppear {
                     NSApp.setActivationPolicy(.regular)
@@ -77,6 +80,8 @@ struct TaskManagementApp: App {
             SettingsView()
                 .modelContainer(modelContainer)
                 .environment(coordinator)
+                .environment(\.jiraService, jiraService)
+                .environment(\.bitbucketService, bitbucketService)
                 .environment(\.logService, logService)
         }
     }

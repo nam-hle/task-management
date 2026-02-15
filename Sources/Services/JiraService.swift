@@ -18,7 +18,7 @@ struct JiraTicketInfo: Identifiable {
 final class JiraService {
     private var cache: [String: JiraTicketInfo] = [:]
     private var inFlight: [String: Task<JiraTicketInfo?, Never>] = [:]
-    private let cacheTTL: TimeInterval = 300
+    private let cacheTTL: TimeInterval = 86_400
 
     private let modelContainer: ModelContainer
     private let logService: LogService?

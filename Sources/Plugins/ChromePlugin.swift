@@ -24,7 +24,6 @@ final class ChromePlugin: TimeTrackingPlugin {
     private let minimumDuration: TimeInterval = 10
 
     // Bitbucket credentials cache
-    private var bbUsername: String?
     private var bbToken: String?
     private var bbCredentialsLoaded = false
     // Cache PR lookups to avoid repeated API calls
@@ -219,10 +218,10 @@ final class ChromePlugin: TimeTrackingPlugin {
             return cached
         }
 
-        guard let username = bbUsername, let token = bbToken else { return nil }
+        guard let token = bbToken else { return nil }
 
         let detail = await BrowserTabService.fetchBitbucketPR(
-            ref: ref, username: username, token: token
+            ref: ref, token: token
         )
         if let detail {
             prCache[cacheKey] = detail
@@ -270,7 +269,6 @@ final class ChromePlugin: TimeTrackingPlugin {
 
         if let config = try? context.fetch(descriptor).first,
            config.isEnabled {
-            bbUsername = config.username
             bbToken = KeychainService.retrieve(key: "bitbucket_token")
         }
     }

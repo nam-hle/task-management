@@ -152,15 +152,13 @@ enum BrowserTabService {
     /// Uses credentials from IntegrationConfig + Keychain.
     static func fetchBitbucketPR(
         ref: BitbucketPRRef,
-        username: String,
         token: String
     ) async -> BitbucketPRDetail? {
         let urlString = "\(ref.serverURL)/rest/api/1.0/projects/\(ref.projectKey)/repos/\(ref.repoSlug)/pull-requests/\(ref.prNumber)"
         guard let url = URL(string: urlString) else { return nil }
 
         var request = URLRequest(url: url)
-        let credentials = Data("\(username):\(token)".utf8).base64EncodedString()
-        request.setValue("Basic \(credentials)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 10
 
         do {

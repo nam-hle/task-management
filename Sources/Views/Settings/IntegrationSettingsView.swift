@@ -9,11 +9,11 @@ struct IntegrationSettingsView: View {
     @State private var jiraURL = ""
     @State private var jiraToken = ""
     @State private var bitbucketURL = ""
-    @State private var bitbucketUsername = ""
     @State private var bitbucketToken = ""
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var isTesting = false
+    @State private var isBBTesting = false
 
     var body: some View {
         Form {
@@ -49,9 +49,10 @@ struct IntegrationSettingsView: View {
             Section("Bitbucket") {
                 TextField("Server URL", text: $bitbucketURL)
                     .textFieldStyle(.roundedBorder)
-                TextField("Username", text: $bitbucketUsername)
-                    .textFieldStyle(.roundedBorder)
-                SecureField("API Token", text: $bitbucketToken)
+                Text("e.g. https://bitbucket.company.com")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                SecureField("Personal Access Token", text: $bitbucketToken)
                     .textFieldStyle(.roundedBorder)
 
                 HStack {
@@ -60,6 +61,21 @@ struct IntegrationSettingsView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+
+                    Button("Test Connection") {
+                        testBitbucketConnection()
+                    }
+                    .controlSize(.small)
+                    .disabled(
+                        bitbucketURL.isEmpty
+                        || bitbucketToken.isEmpty
+                        || isBBTesting
+                    )
+
+                    if isBBTesting {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
                 }
             }
 
@@ -98,7 +114,6 @@ struct IntegrationSettingsView: View {
 
         let bbConfig = configs.first { $0.type == .bitbucket }
         bitbucketURL = bbConfig?.serverURL ?? ""
-        bitbucketUsername = bbConfig?.username ?? ""
         bitbucketToken = KeychainService.retrieve(key: "bitbucket_token") ?? ""
     }
 
@@ -166,11 +181,79 @@ struct IntegrationSettingsView: View {
     }
 
     private func saveBitbucketSettings() {
-        saveConfig(type: .bitbucket, url: bitbucketURL, username: bitbucketUsername)
+        saveConfig(
+            type: .bitbucket,
+            url: bitbucketURL,
+            username: ""
+        )
         if !bitbucketToken.isEmpty {
-            try? KeychainService.store(key: "bitbucket_token", value: bitbucketToken)
+            try? KeychainService.store(
+                key: "bitbucket_token", value: bitbucketToken
+            )
         }
+        statusIsError = false
         statusMessage = "Bitbucket settings saved"
+    }
+
+    private func testBitbucketConnection() {
+        isBBTesting = true
+        statusMessage = nil
+
+        let baseURL = bitbucketURL
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let urlString = "\(baseURL)/rest/api/1.0/users"
+
+        guard let url = URL(string: urlString) else {
+            statusIsError = true
+            statusMessage = "Invalid server URL"
+            isBBTesting = false
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue(
+            "application/json", forHTTPHeaderField: "Accept"
+        )
+        request.setValue(
+            "Bearer \(bitbucketToken)",
+            forHTTPHeaderField: "Authorization"
+        )
+
+        Task {
+            do {
+                let (_, response) = try await URLSession.shared.data(
+                    for: request
+                )
+                guard let http = response as? HTTPURLResponse else {
+                    statusIsError = true
+                    statusMessage = "No response from server"
+                    isBBTesting = false
+                    return
+                }
+
+                if http.statusCode == 200 {
+                    statusIsError = false
+                    statusMessage = "Connected to Bitbucket Server"
+                } else if http.statusCode == 401 {
+                    statusIsError = true
+                    statusMessage =
+                        "Authentication failed — check your token"
+                } else if http.statusCode == 403 {
+                    statusIsError = true
+                    statusMessage =
+                        "Forbidden — token lacks permissions"
+                } else {
+                    statusIsError = true
+                    statusMessage =
+                        "HTTP \(http.statusCode) — check server URL"
+                }
+            } catch {
+                statusIsError = true
+                statusMessage =
+                    "Connection failed: \(error.localizedDescription)"
+            }
+            isBBTesting = false
+        }
     }
 
     private func saveConfig(type: IntegrationType, url: String, username: String) {

@@ -128,13 +128,26 @@ final class FirefoxPlugin: TimeTrackingPlugin {
 
     private func pollTitle() {
         guard isFirefoxActive else { return }
-        guard let title = BrowserTabService.readFirefoxWindowTitle() else { return }
+        guard let title = BrowserTabService.readFirefoxWindowTitle() else {
+            print("[Firefox] Could not read window title")
+            return
+        }
 
         let ticketID = BrowserTabService.extractTicketID(from: title)
+        let detectedFrom = detectSource(from: title)
+
+        print(
+            "[Firefox] title=\"\(title.prefix(80))\" "
+            + "ticket=\(ticketID ?? "none") "
+            + "source=\(detectedFrom) "
+            + "current=\(lastTicketID ?? "none") "
+            + "entryID=\(currentEntryID != nil ? "yes" : "nil")"
+        )
 
         // Only track pages with recognized ticket IDs
         guard let ticketID else {
             if currentEntryID != nil {
+                print("[Firefox] No ticket — finalizing current entry")
                 finalizeCurrentEntry()
             }
             lastTitle = title
@@ -144,11 +157,17 @@ final class FirefoxPlugin: TimeTrackingPlugin {
 
         // Check if ticket changed
         if ticketID != lastTicketID {
+            print(
+                "[Firefox] Ticket changed: "
+                + "\(lastTicketID ?? "none") → \(ticketID) "
+                + "(detectedFrom=\(detectedFrom))"
+            )
             finalizeCurrentEntry()
 
-            let detectedFrom = detectSource(from: title)
             let service = TimeEntryService(modelContainer: modelContainer)
-            let metadata = buildMetadata(title: title, detectedFrom: detectedFrom)
+            let metadata = buildMetadata(
+                title: title, detectedFrom: detectedFrom
+            )
             Task {
                 do {
                     let entryID = try await service.create(
@@ -162,8 +181,13 @@ final class FirefoxPlugin: TimeTrackingPlugin {
                     )
                     currentEntryID = entryID
                     entryStartTime = Date()
+                    print(
+                        "[Firefox] Created entry for \(ticketID)"
+                    )
                 } catch {
-                    print("Firefox plugin: Failed to create entry: \(error)")
+                    print(
+                        "[Firefox] Failed to create entry: \(error)"
+                    )
                 }
             }
         }

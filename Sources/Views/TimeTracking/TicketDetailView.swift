@@ -183,6 +183,7 @@ struct TicketDetailView: View {
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                             .truncationMode(.middle)
+                            .bitbucketHoverPopover(prURL: url)
                     }
 
                     if let title = detection.pageTitle,
