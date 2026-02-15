@@ -5,7 +5,6 @@ struct TimeEntryRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Source indicator
             sourceIcon
                 .frame(width: 20)
 
@@ -28,6 +27,15 @@ struct TimeEntryRow: View {
             }
 
             Spacer()
+
+            statusBadge
+
+            if entry.isAutoApproved {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.yellow)
+                    .font(.caption)
+                    .help("Auto-approved by learned pattern")
+            }
 
             if entry.isInProgress {
                 HStack(spacing: 4) {
@@ -61,6 +69,29 @@ struct TimeEntryRow: View {
         return "\(start) – now"
     }
 
+    @ViewBuilder
+    private var statusBadge: some View {
+        switch entry.bookingStatus {
+        case .reviewed:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.caption)
+                .help("Reviewed")
+        case .exported:
+            Image(systemName: "arrow.up.circle.fill")
+                .foregroundStyle(.blue)
+                .font(.caption)
+                .help("Exported")
+        case .booked:
+            Image(systemName: "checkmark.seal.fill")
+                .foregroundStyle(.purple)
+                .font(.caption)
+                .help("Booked")
+        case .unreviewed:
+            EmptyView()
+        }
+    }
+
     private var sourceIcon: some View {
         Group {
             switch entry.source {
@@ -76,6 +107,9 @@ struct TimeEntryRow: View {
             case .wakatime:
                 Image(systemName: "keyboard")
                     .foregroundStyle(.green)
+            case .edited:
+                Image(systemName: "pencil.circle")
+                    .foregroundStyle(.yellow)
             }
         }
         .font(.caption)
@@ -87,6 +121,7 @@ struct TimeEntryRow: View {
         case .manual: "Manual"
         case .timer: "Timer"
         case .wakatime: "WakaTime"
+        case .edited: "Edited"
         }
     }
 }

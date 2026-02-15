@@ -12,7 +12,17 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Tracking", systemImage: "timer")
                 }
+
+            IntegrationSettingsView()
+                .tabItem {
+                    Label("Integrations", systemImage: "link")
+                }
+
+            LearnedPatternsView()
+                .tabItem {
+                    Label("Patterns", systemImage: "sparkles")
+                }
         }
-        .frame(width: 500, height: 400)
+        .frame(width: 550, height: 450)
     }
 }

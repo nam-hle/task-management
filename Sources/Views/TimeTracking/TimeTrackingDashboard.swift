@@ -34,6 +34,18 @@ struct TimeTrackingDashboard: View {
                     Label("Applications", systemImage: "app.dashed")
                 }
                 .tag("applications")
+
+            TimeEntryListView()
+                .tabItem {
+                    Label("Entries", systemImage: "list.bullet.rectangle")
+                }
+                .tag("entries")
+
+            ExportView()
+                .tabItem {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                }
+                .tag("export")
         }
         .navigationTitle("Time Tracking")
         .task {

@@ -21,6 +21,8 @@ struct TaskManagementApp: App {
                 IntegrationConfig.self,
                 TrackedApplication.self,
                 TicketOverride.self,
+                ExportRecord.self,
+                LearnedPattern.self,
             ])
             let config = ModelConfiguration(isStoredInMemoryOnly: false)
             let container = try ModelContainer(for: schema, configurations: config)
@@ -45,6 +47,7 @@ struct TaskManagementApp: App {
                 }
                 .onAppear {
                     seedDataIfNeeded()
+                    purgeExpiredData()
                     coordinator.recoverFromCrash()
                     if AXIsProcessTrusted() {
                         coordinator.startTracking()
@@ -54,6 +57,27 @@ struct TaskManagementApp: App {
                 }
         }
         .modelContainer(modelContainer)
+        .commands {
+            CommandMenu("Tracking") {
+                Button("Toggle Tracking") {
+                    if case .tracking = coordinator.state {
+                        coordinator.stopTracking()
+                    } else {
+                        coordinator.startTracking()
+                    }
+                }
+                .keyboardShortcut("t", modifiers: [.command])
+
+                Button("Manual Timer") {
+                    if coordinator.isManualTimerActive {
+                        coordinator.stopManualTimer()
+                    } else {
+                        coordinator.startManualTimer(label: nil)
+                    }
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+            }
+        }
 
         MenuBarExtra {
             MenuBarView()
@@ -95,6 +119,15 @@ struct TaskManagementApp: App {
         let service = TimeEntryService(modelContainer: modelContainer)
         Task {
             try? await service.seedTrackedApplicationsIfNeeded()
+        }
+    }
+
+    private func purgeExpiredData() {
+        let service = TimeEntryService(modelContainer: modelContainer)
+        Task {
+            if let count = try? await service.purgeExpired(), count > 0 {
+                print("Purged \(count) expired records")
+            }
         }
     }
 }

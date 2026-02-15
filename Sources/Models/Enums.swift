@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 enum Priority: String, Codable, CaseIterable, Identifiable {
     case high
@@ -47,6 +48,7 @@ enum EntrySource: String, Codable, CaseIterable, Identifiable {
     case timer
     case autoDetected
     case wakatime
+    case edited
 
     var id: String { rawValue }
 
@@ -56,8 +58,18 @@ enum EntrySource: String, Codable, CaseIterable, Identifiable {
         case .timer: "Timer"
         case .autoDetected: "Auto-Detected"
         case .wakatime: "WakaTime"
+        case .edited: "Edited"
         }
     }
+}
+
+struct TimeEntryChanges {
+    var startTime: Date?
+    var endTime: Date?
+    var notes: String?
+    var todoID: PersistentIdentifier?
+    var removeTodo: Bool = false
+    var bookingStatus: BookingStatus?
 }
 
 enum TrackingState: Equatable {

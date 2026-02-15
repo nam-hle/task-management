@@ -25,6 +25,7 @@ final class TrackingCoordinator {
     private let windowMonitor = WindowMonitorService()
     private let idleDetection = IdleDetectionService()
     private var timeEntryService: TimeEntryService?
+    private var learnedPatternService: LearnedPatternService?
 
     private var autoSaveTimer: Timer?
     private var midnightTimer: Timer?
@@ -221,6 +222,12 @@ final class TrackingCoordinator {
                 trackingStartTime = appInfo.timestamp
                 currentAppName = appInfo.name
                 lastSwitchTime = appInfo.timestamp
+
+                // Check for learned pattern auto-approval
+                await checkAutoApproval(
+                    entryID: entryID,
+                    bundleID: appInfo.bundleIdentifier
+                )
             } catch {
                 print("Failed to create time entry: \(error)")
             }
@@ -325,5 +332,38 @@ final class TrackingCoordinator {
         midnightTimer = nil
         elapsedTimer?.invalidate()
         elapsedTimer = nil
+    }
+
+    // MARK: - Learned Patterns
+
+    private func getLearnedPatternService() -> LearnedPatternService {
+        if let service = learnedPatternService { return service }
+        let service = LearnedPatternService(modelContainer: modelContainer)
+        learnedPatternService = service
+        return service
+    }
+
+    private func checkAutoApproval(
+        entryID: PersistentIdentifier,
+        bundleID: String
+    ) async {
+        let patternService = getLearnedPatternService()
+        let entryService = getTimeEntryService()
+        do {
+            if let patternID = try await patternService.findMatch(
+                contextType: "bundleID",
+                identifier: bundleID
+            ) {
+                if let todoID = await patternService.linkedTodoID(for: patternID) {
+                    try await entryService.applyAutoApproval(
+                        entryID: entryID,
+                        patternID: patternID,
+                        todoID: todoID
+                    )
+                }
+            }
+        } catch {
+            print("Auto-approval check failed: \(error)")
+        }
     }
 }

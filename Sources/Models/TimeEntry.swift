@@ -18,6 +18,10 @@ final class TimeEntry {
     var applicationBundleID: String?
     var label: String?
 
+    // 008: Learned patterns
+    var isAutoApproved: Bool = false
+    var learnedPattern: LearnedPattern?
+
     var todo: Todo?
 
     var formattedDuration: String {
@@ -49,7 +53,8 @@ final class TimeEntry {
         todo: Todo? = nil,
         applicationName: String? = nil,
         applicationBundleID: String? = nil,
-        label: String? = nil
+        label: String? = nil,
+        isAutoApproved: Bool = false
     ) {
         self.id = UUID()
         self.startTime = startTime
@@ -64,5 +69,6 @@ final class TimeEntry {
         self.applicationName = applicationName
         self.applicationBundleID = applicationBundleID
         self.label = label
+        self.isAutoApproved = isAutoApproved
     }
 }
