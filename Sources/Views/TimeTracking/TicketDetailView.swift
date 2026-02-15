@@ -5,6 +5,7 @@ struct TicketDetailView: View {
     let ticket: TicketAggregate
 
     @State private var isExpanded = false
+    @State private var refreshTick = 0
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
@@ -23,6 +24,15 @@ struct TicketDetailView: View {
 
     // MARK: - Header
 
+    private var hasInProgressEntries: Bool {
+        ticket.entries.contains { $0.isInProgress }
+    }
+
+    private var liveDuration: TimeInterval {
+        _ = refreshTick
+        return TicketAggregationService.deduplicatedDuration(entries: ticket.entries)
+    }
+
     private var ticketHeader: some View {
         HStack(spacing: 8) {
             Image(systemName: "ticket")
@@ -31,6 +41,7 @@ struct TicketDetailView: View {
 
             Text(ticket.ticketID)
                 .font(.headline)
+                .jiraHoverPopover(ticketID: ticket.ticketID)
 
             Text("\(ticket.sourceBreakdown.count) source\(ticket.sourceBreakdown.count == 1 ? "" : "s")")
                 .font(.caption)
@@ -38,9 +49,16 @@ struct TicketDetailView: View {
 
             Spacer()
 
-            Text(formatDuration(ticket.totalDuration))
+            Text(formatDuration(liveDuration))
                 .font(.system(.callout, design: .monospaced))
                 .foregroundStyle(.secondary)
+        }
+        .onReceive(
+            Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+        ) { _ in
+            if hasInProgressEntries {
+                refreshTick &+= 1
+            }
         }
     }
 

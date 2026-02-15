@@ -8,8 +8,10 @@ enum NavigationItem: Hashable {
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.logService) private var logService
     @State private var sidebarSelection: NavigationItem? = .timeTracking
     @State private var selectedTodo: Todo?
+    @State private var showLogPanel = false
 
     var body: some View {
         NavigationSplitView {
@@ -35,7 +37,28 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if showLogPanel, let logService {
+                LogPanelView(logService: logService)
+            }
+        }
         .frame(minWidth: 800, minHeight: 500)
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    showLogPanel.toggle()
+                } label: {
+                    Image(systemName: "terminal")
+                }
+                .help("Toggle Log Panel")
+            }
+            ToolbarItem(placement: .automatic) {
+                SettingsLink {
+                    Image(systemName: "gearshape")
+                }
+                .help("Settings")
+            }
+        }
         .onChange(of: sidebarSelection) { _, _ in
             selectedTodo = nil
         }
@@ -79,5 +102,51 @@ struct ContentView: View {
         case .completed: "Completed"
         case .trash: "Trash"
         }
+    }
+}
+
+// MARK: - Log Panel
+
+private struct LogPanelView: View {
+    let logService: LogService
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(logService.entries) { entry in
+                            HStack(alignment: .top, spacing: 6) {
+                                Text(Self.timeFormatter.string(from: entry.timestamp))
+                                    .foregroundStyle(.secondary)
+                                Text(entry.level.rawValue)
+                                    .foregroundStyle(entry.level == .error ? .red : .blue)
+                                    .frame(width: 40, alignment: .leading)
+                                Text(entry.message)
+                            }
+                            .font(.system(size: 11, design: .monospaced))
+                            .textSelection(.enabled)
+                            .id(entry.id)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                }
+                .onChange(of: logService.entries.count) { _, _ in
+                    if let last = logService.entries.last {
+                        proxy.scrollTo(last.id, anchor: .bottom)
+                    }
+                }
+            }
+        }
+        .frame(height: 150)
+        .background(.background)
     }
 }

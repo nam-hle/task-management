@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import SwiftData
 
@@ -7,6 +8,8 @@ struct TaskManagementApp: App {
 
     @State private var coordinator: TrackingCoordinator
     @State private var pluginManager = PluginManager()
+    @State private var jiraService: JiraService
+    @State private var logService = LogService()
 
     init() {
         do {
@@ -27,6 +30,9 @@ struct TaskManagementApp: App {
             let container = try ModelContainer(for: schema, configurations: config)
             modelContainer = container
             _coordinator = State(initialValue: TrackingCoordinator(modelContainer: container))
+            let log = LogService()
+            _logService = State(initialValue: log)
+            _jiraService = State(initialValue: JiraService(modelContainer: container, logService: log))
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }
@@ -36,7 +42,12 @@ struct TaskManagementApp: App {
         WindowGroup(id: "main") {
             ContentView()
                 .environment(coordinator)
+                .environment(\.jiraService, jiraService)
+                .environment(\.logService, logService)
                 .onAppear {
+                    NSApp.setActivationPolicy(.regular)
+                    NSApp.activate(ignoringOtherApps: true)
+                    NSApp.windows.first?.makeKeyAndOrderFront(nil)
                     setupPlugins()
                     purgeExpiredData()
                     coordinator.recoverFromCrash()
@@ -65,6 +76,8 @@ struct TaskManagementApp: App {
         Settings {
             SettingsView()
                 .modelContainer(modelContainer)
+                .environment(coordinator)
+                .environment(\.logService, logService)
         }
     }
 
@@ -84,7 +97,7 @@ struct TaskManagementApp: App {
         let service = TimeEntryService(modelContainer: modelContainer)
         Task {
             if let count = try? await service.purgeExpired(), count > 0 {
-                print("Purged \(count) expired records")
+                logService.log("Purged \(count) expired records")
             }
         }
     }

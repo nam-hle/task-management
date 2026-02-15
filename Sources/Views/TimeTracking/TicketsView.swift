@@ -8,6 +8,7 @@ struct TicketsView: View {
 
     @State private var selectedDate = Date()
     @State private var showSettings = false
+    @State private var refreshTick = 0
 
     @AppStorage("ticketExcludedProjects") private var excludedProjectsData = Data()
     @AppStorage("ticketUnknownPatterns") private var unknownPatternsData = Data()
@@ -23,7 +24,8 @@ struct TicketsView: View {
     }
 
     private var tickets: [TicketAggregate] {
-        TicketAggregationService.aggregate(entries: entriesForDate)
+        _ = refreshTick
+        return TicketAggregationService.aggregate(entries: entriesForDate)
     }
 
     private var assignedTickets: [TicketAggregate] {
@@ -34,8 +36,13 @@ struct TicketsView: View {
         tickets.first { $0.ticketID == "unassigned" }
     }
 
+    private var hasInProgressEntries: Bool {
+        entriesForDate.contains { $0.isInProgress }
+    }
+
     private var totalDuration: TimeInterval {
-        TicketAggregationService.deduplicatedDuration(entries: entriesForDate)
+        _ = refreshTick
+        return TicketAggregationService.deduplicatedDuration(entries: entriesForDate)
     }
 
     var body: some View {
@@ -49,6 +56,13 @@ struct TicketsView: View {
                 excludedProjectsData: $excludedProjectsData,
                 unknownPatternsData: $unknownPatternsData
             )
+        }
+        .onReceive(
+            Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+        ) { _ in
+            if hasInProgressEntries {
+                refreshTick &+= 1
+            }
         }
     }
 
@@ -169,6 +183,7 @@ struct TicketsView: View {
                     .truncationMode(.middle)
                     .foregroundStyle(ticket.ticketID == "unassigned"
                         ? .secondary : .primary)
+                    .jiraHoverPopover(ticketID: ticket.ticketID)
                 Text(formatDuration(ticket.totalDuration))
                     .font(.system(.callout, design: .monospaced))
                     .foregroundStyle(.secondary)
