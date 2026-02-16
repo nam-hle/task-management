@@ -31,13 +31,14 @@ struct TicketTimelineRowView: View {
                 if let summary {
                     Text(summary)
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
             }
-            .frame(width: 200, alignment: .leading)
+            .frame(width: 260, alignment: .leading)
             .padding(.leading, 8)
+            .padding(.trailing, 12)
 
             GeometryReader { geometry in
                 let width = geometry.size.width
@@ -63,6 +64,7 @@ struct TicketTimelineRowView: View {
             }
             .frame(height: 32)
         }
+        .padding(.vertical, 6)
         .task {
             guard summary == nil else { return }
             let info = await jiraService?.ticketInfo(

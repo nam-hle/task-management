@@ -10,6 +10,8 @@ struct JiraTicketInfo: Identifiable {
     let assignee: String?
     let priority: String?
     let issueType: String?
+    let projectKey: String?
+    let projectName: String?
     let browseURL: URL?
     let fetchedAt: Date
 }
@@ -19,6 +21,7 @@ final class JiraService {
     private var cache: [String: JiraTicketInfo] = [:]
     private var inFlight: [String: Task<JiraTicketInfo?, Never>] = [:]
     private let cacheTTL: TimeInterval = 300
+    private(set) var projectNames: [String: String] = [:]
 
     private let modelContainer: ModelContainer
     private let logService: LogService?
@@ -44,6 +47,7 @@ final class JiraService {
             let info = await self.fetchFromJira(ticketID: ticketID)
             if let info {
                 self.cache[ticketID] = info
+                self.cacheProjectName(from: info)
             }
             self.inFlight.removeValue(forKey: ticketID)
             return info
@@ -65,6 +69,7 @@ final class JiraService {
             let info = await self.fetchFromJira(ticketID: ticketID)
             if let info {
                 self.cache[ticketID] = info
+                self.cacheProjectName(from: info)
             }
             self.inFlight.removeValue(forKey: ticketID)
             return info
@@ -72,7 +77,17 @@ final class JiraService {
         inFlight[ticketID] = task
     }
 
+    func projectName(for projectKey: String) -> String? {
+        projectNames[projectKey]
+    }
+
     // MARK: - Private
+
+    private func cacheProjectName(from info: JiraTicketInfo) {
+        if let key = info.projectKey, let name = info.projectName {
+            projectNames[key] = name
+        }
+    }
 
     private func fetchFromJira(ticketID: String) async -> JiraTicketInfo? {
         guard let credentials = loadCredentials() else {
@@ -82,7 +97,7 @@ final class JiraService {
 
         let baseURL = credentials.serverURL
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let fields = "summary,status,assignee,priority,issuetype"
+        let fields = "summary,status,assignee,priority,issuetype,project"
         let urlString = "\(baseURL)/rest/api/2/issue/\(ticketID)?fields=\(fields)"
         logService?.log("Fetching \(urlString)")
 
@@ -189,6 +204,16 @@ final class JiraService {
             issueType = nil
         }
 
+        let projectKey: String?
+        let projectName: String?
+        if let projectObj = fields["project"] as? [String: Any] {
+            projectKey = projectObj["key"] as? String
+            projectName = projectObj["name"] as? String
+        } else {
+            projectKey = nil
+            projectName = nil
+        }
+
         let browseURL = URL(string: "\(baseURL)/browse/\(ticketID)")
 
         let info = JiraTicketInfo(
@@ -199,6 +224,8 @@ final class JiraService {
             assignee: assignee,
             priority: priority,
             issueType: issueType,
+            projectKey: projectKey,
+            projectName: projectName,
             browseURL: browseURL,
             fetchedAt: Date()
         )

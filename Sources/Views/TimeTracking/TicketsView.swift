@@ -7,6 +7,7 @@ struct TicketsView: View {
     private var allEntries: [TimeEntry]
 
     @Environment(TrackingCoordinator.self) private var coordinator
+    @Environment(\.jiraService) private var jiraService
 
     @State private var selectedDate = Date()
     @State private var refreshTick = 0
@@ -38,6 +39,35 @@ struct TicketsView: View {
 
     private var unassignedTicket: TicketAggregate? {
         tickets.first { $0.ticketID == "unassigned" }
+    }
+
+    struct ProjectGroup: Identifiable {
+        let projectKey: String
+        let tickets: [TicketAggregate]
+        var id: String { projectKey }
+
+        var totalDuration: TimeInterval {
+            tickets.reduce(0) { $0 + $1.totalDuration }
+        }
+    }
+
+    private var projectGroups: [ProjectGroup] {
+        var grouped: [String: [TicketAggregate]] = [:]
+        for ticket in assignedTickets {
+            let key = ticket.ticketID
+                .split(separator: "-").first
+                .map(String.init) ?? "OTHER"
+            grouped[key, default: []].append(ticket)
+        }
+        return grouped.map { key, tickets in
+            ProjectGroup(
+                projectKey: key,
+                tickets: tickets.sorted {
+                    $0.totalDuration > $1.totalDuration
+                }
+            )
+        }
+        .sorted { $0.totalDuration > $1.totalDuration }
     }
 
     private var hasInProgressEntries: Bool {
@@ -162,19 +192,30 @@ struct TicketsView: View {
 
     private var ticketTimeline: some View {
         VStack(spacing: 0) {
-            ForEach(
-                Array(
-                    assignedTickets.prefix(10).enumerated()
-                ),
-                id: \.element.id
-            ) { index, ticket in
-                let color = ticketColors[index % ticketColors.count]
-                ticketTimelineRow(
-                    ticket: ticket, color: color
-                )
+            var colorIndex = 0
+            ForEach(projectGroups) { group in
+                projectSectionHeader(group: group)
 
-                if index < min(assignedTickets.count, 10) - 1 {
-                    Divider().opacity(0.5)
+                ForEach(
+                    Array(group.tickets.enumerated()),
+                    id: \.element.id
+                ) { index, ticket in
+                    let color = ticketColors[
+                        colorIndex % ticketColors.count
+                    ]
+                    let _ = (colorIndex += 1)
+                    ticketTimelineRow(
+                        ticket: ticket, color: color
+                    )
+
+                    if index < group.tickets.count - 1 {
+                        Divider().opacity(0.5)
+                    }
+                }
+
+                if group.id != projectGroups.last?.id {
+                    Divider()
+                        .padding(.vertical, 4)
                 }
             }
 
@@ -186,6 +227,31 @@ struct TicketsView: View {
             timelineAxisLabels
             sourceLegend
         }
+    }
+
+    private func projectSectionHeader(
+        group: ProjectGroup
+    ) -> some View {
+        let name = jiraService?.projectName(
+            for: group.projectKey
+        ) ?? group.projectKey
+        return HStack(spacing: 6) {
+            Text(name)
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+            Text(
+                "(\(group.tickets.count) ticket\(group.tickets.count == 1 ? "" : "s"))"
+            )
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            Spacer()
+            Text(formatDuration(group.totalDuration))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
     }
 
     private func ticketTimelineRow(
@@ -216,8 +282,9 @@ struct TicketsView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
             }
-            .frame(width: 200)
+            .frame(width: 260)
             .padding(.leading, 8)
+            .padding(.trailing, 12)
 
             GeometryReader { geometry in
                 let width = geometry.size.width
@@ -381,8 +448,9 @@ struct TicketsView: View {
 
     private var timelineAxisLabels: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: 200)
+            Color.clear.frame(width: 260)
                 .padding(.leading, 8)
+                .padding(.trailing, 12)
 
             GeometryReader { geometry in
                 let width = geometry.size.width
