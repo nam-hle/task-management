@@ -2,12 +2,10 @@ import SwiftUI
 import SwiftData
 
 struct TicketSettingsView: View {
-    @Binding var excludedProjectsData: Data
-    @Binding var unknownPatternsData: Data
-
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query private var overrides: [TicketOverride]
+
+    @AppStorage("ticketUnknownPatterns") private var unknownPatternsData = Data()
 
     @State private var newPattern = ""
     @State private var patternError: String?
@@ -21,12 +19,6 @@ struct TicketSettingsView: View {
     @State private var newPriority = 0
     @State private var overrideError: String?
 
-    private var excludedProjects: Set<String> {
-        (try? JSONDecoder().decode(
-            [String].self, from: excludedProjectsData
-        )).map(Set.init) ?? []
-    }
-
     private var unknownPatterns: [String] {
         (try? JSONDecoder().decode(
             [String].self, from: unknownPatternsData
@@ -34,25 +26,11 @@ struct TicketSettingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Ticket Settings")
-                    .font(.headline)
-                Spacer()
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-            }
-            .padding()
-
-            Divider()
-
-            Form {
-                overridesSection
-                unknownPatternsSection
-            }
-            .formStyle(.grouped)
+        Form {
+            overridesSection
+            unknownPatternsSection
         }
-        .frame(width: 500, height: 500)
+        .formStyle(.grouped)
     }
 
     // MARK: - Overrides

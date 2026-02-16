@@ -18,88 +18,177 @@ struct IntegrationSettingsView: View {
     @State private var bbSaveTask: Task<Void, Never>?
 
     var body: some View {
-        Form {
-            Section("Jira") {
-                TextField("Server URL", text: $jiraURL)
-                    .textFieldStyle(.roundedBorder)
-                Text(
-                    "Base URL before /browse"
-                    + " — e.g. https://jira.company.com/jira"
+        ScrollView {
+            VStack(spacing: 16) {
+                integrationCard(
+                    title: "Jira",
+                    icon: "list.clipboard",
+                    iconColor: .blue,
+                    urlLabel: "Server URL",
+                    urlHint: "e.g. https://jira.company.com/jira",
+                    url: $jiraURL,
+                    token: $jiraToken,
+                    status: jiraStatus,
+                    onTest: testJiraConnection
                 )
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                SecureField("Personal Access Token", text: $jiraToken)
-                    .textFieldStyle(.roundedBorder)
 
-                HStack {
-                    Button("Test Connection") {
-                        testJiraConnection()
-                    }
-                    .controlSize(.small)
-                    .disabled(
-                        jiraURL.isEmpty || jiraToken.isEmpty
-                        || jiraStatus == .testing
-                    )
+                integrationCard(
+                    title: "Bitbucket",
+                    icon: "arrow.triangle.branch",
+                    iconColor: .blue,
+                    urlLabel: "Server URL",
+                    urlHint: "e.g. https://bitbucket.company.com",
+                    url: $bitbucketURL,
+                    token: $bitbucketToken,
+                    status: bbStatus,
+                    onTest: testBitbucketConnection
+                )
 
-                    if jiraStatus == .testing {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
-
-                statusRow(jiraStatus)
+                Spacer()
             }
-            .onChange(of: jiraURL) { debouncedSaveJira() }
-            .onChange(of: jiraToken) { debouncedSaveJira() }
-
-            Section("Bitbucket") {
-                TextField("Server URL", text: $bitbucketURL)
-                    .textFieldStyle(.roundedBorder)
-                Text("e.g. https://bitbucket.company.com")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                SecureField("Personal Access Token", text: $bitbucketToken)
-                    .textFieldStyle(.roundedBorder)
-
-                HStack {
-                    Button("Test Connection") {
-                        testBitbucketConnection()
-                    }
-                    .controlSize(.small)
-                    .disabled(
-                        bitbucketURL.isEmpty || bitbucketToken.isEmpty
-                        || bbStatus == .testing
-                    )
-
-                    if bbStatus == .testing {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
-
-                statusRow(bbStatus)
-            }
-            .onChange(of: bitbucketURL) { debouncedSaveBitbucket() }
-            .onChange(of: bitbucketToken) { debouncedSaveBitbucket() }
+            .padding()
         }
-        .formStyle(.grouped)
+        .onChange(of: jiraURL) { debouncedSaveJira() }
+        .onChange(of: jiraToken) { debouncedSaveJira() }
+        .onChange(of: bitbucketURL) { debouncedSaveBitbucket() }
+        .onChange(of: bitbucketToken) { debouncedSaveBitbucket() }
         .onAppear { loadSettings() }
     }
 
+    // MARK: - Integration Card
+
+    private func integrationCard(
+        title: String,
+        icon: String,
+        iconColor: Color,
+        urlLabel: String,
+        urlHint: String,
+        url: Binding<String>,
+        token: Binding<String>,
+        status: ConnectionStatus?,
+        onTest: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundStyle(iconColor)
+                    .frame(width: 28, height: 28)
+
+                Text(title)
+                    .font(.headline)
+
+                Spacer()
+
+                statusBadge(status)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(urlLabel)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    TextField(urlHint, text: url)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Personal Access Token")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    SecureField("Enter token", text: token)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+
+            HStack {
+                Button("Test Connection") { onTest() }
+                    .controlSize(.small)
+                    .disabled(
+                        url.wrappedValue.isEmpty
+                        || token.wrappedValue.isEmpty
+                        || status == .testing
+                    )
+
+                if status == .testing {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+
+                if case .error(let message) = status {
+                    Spacer()
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                }
+            }
+        }
+        .padding()
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(.quaternary, lineWidth: 1)
+        )
+    }
+
+    // MARK: - Status Badge
+
     @ViewBuilder
-    private func statusRow(_ status: ConnectionStatus?) -> some View {
-        if let status {
-            switch status {
-            case .connected(let message):
-                Label(message, systemImage: "circle.fill")
-                    .foregroundStyle(.green)
-                    .font(.callout)
-            case .error(let message):
-                Label(message, systemImage: "circle.fill")
-                    .foregroundStyle(.red)
-                    .font(.callout)
-            case .testing:
-                EmptyView()
+    private func statusBadge(_ status: ConnectionStatus?) -> some View {
+        switch status {
+        case .connected(let message):
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(.green)
+                    .frame(width: 6, height: 6)
+                Text(message)
+                    .font(.caption)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(.green.opacity(0.1))
+            .clipShape(Capsule())
+        case .testing:
+            HStack(spacing: 4) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Testing")
+                    .font(.caption)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(.secondary.opacity(0.1))
+            .clipShape(Capsule())
+        case .error:
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(.red)
+                    .frame(width: 6, height: 6)
+                Text("Error")
+                    .font(.caption)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(.red.opacity(0.1))
+            .clipShape(Capsule())
+        case nil:
+            if true {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(.secondary)
+                        .frame(width: 6, height: 6)
+                    Text("Not configured")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(.secondary.opacity(0.08))
+                .clipShape(Capsule())
             }
         }
     }
@@ -254,9 +343,19 @@ struct IntegrationSettingsView: View {
                 }
 
                 if http.statusCode == 200 {
-                    bbStatus = .connected(
-                        "Connected to Bitbucket Server"
+                    let username = http.value(
+                        forHTTPHeaderField: "X-AUSERNAME"
                     )
+                    if let username, !username.isEmpty {
+                        let displayName = await fetchBBDisplayName(
+                            baseURL: baseURL, username: username
+                        )
+                        bbStatus = .connected(
+                            "Connected as \(displayName ?? username)"
+                        )
+                    } else {
+                        bbStatus = .connected("Connected")
+                    }
                 } else if http.statusCode == 401 {
                     bbStatus = .error(
                         "Authentication failed — check your token"
@@ -277,6 +376,33 @@ struct IntegrationSettingsView: View {
                 )
             }
         }
+    }
+
+    private func fetchBBDisplayName(
+        baseURL: String, username: String
+    ) async -> String? {
+        guard let url = URL(
+            string: "\(baseURL)/rest/api/1.0/users/\(username)"
+        ) else { return nil }
+
+        var request = URLRequest(url: url)
+        request.setValue(
+            "application/json", forHTTPHeaderField: "Accept"
+        )
+        request.setValue(
+            "Bearer \(bitbucketToken)",
+            forHTTPHeaderField: "Authorization"
+        )
+
+        guard let (data, _) = try? await URLSession.shared.data(
+            for: request
+        ),
+            let json = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any],
+            let displayName = json["displayName"] as? String
+        else { return nil }
+
+        return displayName
     }
 
     // MARK: - Persistence

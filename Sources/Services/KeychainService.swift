@@ -1,93 +1,61 @@
 import Foundation
-import Security
-
-enum KeychainError: Error, LocalizedError {
-    case duplicateItem
-    case itemNotFound
-    case unexpectedStatus(OSStatus)
-
-    var errorDescription: String? {
-        switch self {
-        case .duplicateItem: "Item already exists in Keychain"
-        case .itemNotFound: "Item not found in Keychain"
-        case .unexpectedStatus(let status):
-            "Keychain error: \(SecCopyErrorMessageString(status, nil) ?? "Unknown" as CFString)"
-        }
-    }
-}
 
 struct KeychainService {
-    private static let defaultService = "com.taskmanagement.integrations"
+    private static let credentialsURL: URL = {
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first!
+        let dir = appSupport.appendingPathComponent(
+            "TaskManagement", isDirectory: true
+        )
+        try? FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true
+        )
+        return dir.appendingPathComponent("credentials.json")
+    }()
 
     static func store(
         key: String,
         value: String,
-        service: String = defaultService
+        service: String = ""
     ) throws {
-        guard let data = value.data(using: .utf8) else { return }
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-        ]
-
-        // Try to update first
-        let updateAttributes: [String: Any] = [
-            kSecValueData as String: data,
-        ]
-
-        let updateStatus = SecItemUpdate(query as CFDictionary, updateAttributes as CFDictionary)
-
-        if updateStatus == errSecItemNotFound {
-            // Item doesn't exist, add it
-            var addQuery = query
-            addQuery[kSecValueData as String] = data
-            let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
-            guard addStatus == errSecSuccess else {
-                throw KeychainError.unexpectedStatus(addStatus)
-            }
-        } else if updateStatus != errSecSuccess {
-            throw KeychainError.unexpectedStatus(updateStatus)
-        }
+        var store = loadStore()
+        store[key] = value
+        let data = try JSONEncoder().encode(store)
+        try data.write(to: credentialsURL, options: .atomic)
+        setFilePermissions()
     }
 
     static func retrieve(
         key: String,
-        service: String = defaultService
+        service: String = ""
     ) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let value = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        return value
+        loadStore()[key]
     }
 
     static func delete(
         key: String,
-        service: String = defaultService
+        service: String = ""
     ) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-        ]
+        var store = loadStore()
+        store.removeValue(forKey: key)
+        let data = try JSONEncoder().encode(store)
+        try data.write(to: credentialsURL, options: .atomic)
+        setFilePermissions()
+    }
 
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainError.unexpectedStatus(status)
-        }
+    private static func loadStore() -> [String: String] {
+        guard let data = try? Data(contentsOf: credentialsURL),
+              let store = try? JSONDecoder().decode(
+                  [String: String].self, from: data
+              )
+        else { return [:] }
+        return store
+    }
+
+    private static func setFilePermissions() {
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: credentialsURL.path
+        )
     }
 }

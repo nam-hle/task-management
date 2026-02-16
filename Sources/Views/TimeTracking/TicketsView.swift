@@ -9,12 +9,8 @@ struct TicketsView: View {
     @Environment(TrackingCoordinator.self) private var coordinator
 
     @State private var selectedDate = Date()
-    @State private var showSettings = false
     @State private var refreshTick = 0
     @State private var isSyncing = false
-
-    @AppStorage("ticketExcludedProjects") private var excludedProjectsData = Data()
-    @AppStorage("ticketUnknownPatterns") private var unknownPatternsData = Data()
 
     private var entriesForDate: [TimeEntry] {
         let calendar = Calendar.current
@@ -60,12 +56,6 @@ struct TicketsView: View {
             header
             Divider()
             content
-        }
-        .sheet(isPresented: $showSettings) {
-            TicketSettingsView(
-                excludedProjectsData: $excludedProjectsData,
-                unknownPatternsData: $unknownPatternsData
-            )
         }
         .onReceive(
             Timer.publish(every: 1, on: .main, in: .common)
@@ -118,15 +108,6 @@ struct TicketsView: View {
             .disabled(isSyncing)
             .help("Refresh plugin data")
 
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.title3)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Ticket settings")
         }
         .padding()
     }
@@ -406,9 +387,7 @@ struct TicketsView: View {
             GeometryReader { geometry in
                 let width = geometry.size.width
                 let totalSeconds: Double = 24 * 3600
-                let hours = [
-                    0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22,
-                ]
+                let hours = Array(0..<24)
 
                 ForEach(hours, id: \.self) { hour in
                     let x = width

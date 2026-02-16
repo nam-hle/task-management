@@ -25,7 +25,9 @@ struct JiraHoverModifier: ViewModifier {
     @Environment(\.jiraService) private var jiraService
     @State private var isHovering = false
     @State private var ticketInfo: JiraTicketInfo?
-    @State private var hasFetched = false
+    @State private var hoverTask: Task<Void, Never>?
+    @State private var dismissTask: Task<Void, Never>?
+    @State private var popoverHovering = false
 
     private var isValidTicket: Bool {
         ticketID != "unassigned"
@@ -33,83 +35,109 @@ struct JiraHoverModifier: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        if isValidTicket {
+        if let service = jiraService, isValidTicket {
             content
                 .onHover { hovering in
                     isHovering = hovering
-                    if hovering && !hasFetched {
-                        hasFetched = true
-                        Task {
-                            ticketInfo = await jiraService?
+                    if hovering {
+                        dismissTask?.cancel()
+                        dismissTask = nil
+                        service.prefetch(ticketID: ticketID)
+                        hoverTask?.cancel()
+                        hoverTask = Task {
+                            try? await Task.sleep(
+                                for: .milliseconds(400)
+                            )
+                            guard !Task.isCancelled,
+                                  isHovering else { return }
+                            ticketInfo = await service
                                 .ticketInfo(for: ticketID)
                         }
+                    } else {
+                        hoverTask?.cancel()
+                        hoverTask = nil
+                        scheduleDismiss()
                     }
                 }
-                .popover(isPresented: $isHovering) {
-                    ticketPopoverContent
+                .popover(
+                    item: $ticketInfo, arrowEdge: .bottom
+                ) { info in
+                    ticketPopoverContent(info: info)
+                        .onHover { hovering in
+                            popoverHovering = hovering
+                            if hovering {
+                                dismissTask?.cancel()
+                                dismissTask = nil
+                            } else {
+                                scheduleDismiss()
+                            }
+                        }
                 }
         } else {
             content
         }
     }
 
-    private var ticketPopoverContent: some View {
+    private func scheduleDismiss() {
+        dismissTask?.cancel()
+        dismissTask = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            if !isHovering && !popoverHovering {
+                ticketInfo = nil
+            }
+        }
+    }
+
+    private func ticketPopoverContent(
+        info: JiraTicketInfo
+    ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let info = ticketInfo {
-                HStack(spacing: 6) {
-                    if let type = info.issueType {
-                        Text(type)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(info.ticketID)
-                        .font(.headline)
-                    Spacer()
-                    statusBadge(
-                        info.status,
-                        categoryKey: info.statusCategoryKey
-                    )
-                }
-
-                Text(info.summary)
-                    .font(.callout)
-                    .lineLimit(3)
-
-                HStack(spacing: 12) {
-                    if let assignee = info.assignee {
-                        Label(assignee, systemImage: "person")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    if let priority = info.priority {
-                        Label(priority, systemImage: "flag")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if let url = info.browseURL {
-                    Divider()
-                    Button {
-                        NSWorkspace.shared.open(url)
-                    } label: {
-                        Label(
-                            "Open in Jira",
-                            systemImage: "arrow.up.right.square"
-                        )
-                        .font(.callout)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.blue)
-                }
-            } else {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Loading \(ticketID)...")
-                        .font(.callout)
+            HStack(spacing: 6) {
+                if let type = info.issueType {
+                    Text(type)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                Text(info.ticketID)
+                    .font(.headline)
+                Spacer()
+                statusBadge(
+                    info.status,
+                    categoryKey: info.statusCategoryKey
+                )
+            }
+
+            Text(info.summary)
+                .font(.callout)
+                .lineLimit(3)
+
+            HStack(spacing: 12) {
+                if let assignee = info.assignee {
+                    Label(assignee, systemImage: "person")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let priority = info.priority {
+                    Label(priority, systemImage: "flag")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let url = info.browseURL {
+                Divider()
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Label(
+                        "Open in Jira",
+                        systemImage: "arrow.up.right.square"
+                    )
+                    .font(.callout)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.blue)
             }
         }
         .padding(12)

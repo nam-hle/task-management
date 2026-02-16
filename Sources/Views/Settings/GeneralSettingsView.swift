@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-struct TrackingSettingsView: View {
+struct GeneralSettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage("idleThresholdSeconds") private var idleThreshold: Double = 300
     @AppStorage("minimumSwitchDuration") private var minSwitchDuration: Double = 30
