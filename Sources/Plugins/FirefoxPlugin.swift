@@ -133,8 +133,11 @@ final class FirefoxPlugin: TimeTrackingPlugin {
             return
         }
 
-        let ticketID = BrowserTabService.extractTicketID(from: title)
         let detectedFrom = detectSource(from: title)
+        let isRecognizedSource = detectedFrom == "bitbucket"
+            || detectedFrom == "jira"
+        let ticketID = BrowserTabService.extractTicketID(from: title)
+            ?? (isRecognizedSource ? "unassigned" : nil)
 
         print(
             "[Firefox] title=\"\(title.prefix(80))\" "
@@ -144,7 +147,6 @@ final class FirefoxPlugin: TimeTrackingPlugin {
             + "entryID=\(currentEntryID != nil ? "yes" : "nil")"
         )
 
-        // Only track pages with recognized ticket IDs
         guard let ticketID else {
             if currentEntryID != nil {
                 print("[Firefox] No ticket — finalizing current entry")

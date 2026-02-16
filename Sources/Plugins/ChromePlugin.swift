@@ -199,9 +199,10 @@ final class ChromePlugin: TimeTrackingPlugin {
         if let url = tabInfo.url,
            let prRef = BrowserTabService.parseBitbucketPRURL(url) {
             let detail = await fetchOrCachePR(ref: prRef)
-            if let ticketID = detail?.ticketID {
-                return TicketResolution(ticketID: ticketID, detectedFrom: "bitbucket")
-            }
+            let ticketID = detail?.ticketID ?? "unassigned"
+            return TicketResolution(
+                ticketID: ticketID, detectedFrom: "bitbucket"
+            )
         }
 
         // 3. Try extracting ticket from page title
