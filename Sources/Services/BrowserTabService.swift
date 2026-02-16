@@ -18,6 +18,7 @@ struct BitbucketPRDetail {
     let title: String
     let sourceBranch: String
     let ticketID: String?
+    let creator: String?
 }
 
 enum BrowserTabService {
@@ -61,9 +62,9 @@ enum BrowserTabService {
         }
     }
 
-    // MARK: - Firefox (AXUIElement window title)
+    // MARK: - Firefox (AXUIElement title + URL)
 
-    static func readFirefoxWindowTitle() -> String? {
+    static func readFirefoxTab() -> BrowserTabInfo? {
         guard let app = NSWorkspace.shared.runningApplications.first(
             where: { $0.bundleIdentifier == "org.mozilla.firefox" && $0.isActive }
         ) else { return nil }
@@ -75,22 +76,100 @@ enum BrowserTabService {
         )
         guard result == .success, let window = focusedWindow else { return nil }
 
+        // Read window title
         var titleValue: AnyObject?
         let titleResult = AXUIElementCopyAttributeValue(
             window as! AXUIElement, kAXTitleAttribute as CFString, &titleValue
         )
-        guard titleResult == .success, let title = titleValue as? String else { return nil }
+        guard titleResult == .success, let rawTitle = titleValue as? String else {
+            return nil
+        }
 
         // Strip browser suffix
         let suffixes = [" — Mozilla Firefox", " - Mozilla Firefox"]
-        var cleaned = title
+        var title = rawTitle
         for suffix in suffixes {
-            if cleaned.hasSuffix(suffix) {
-                cleaned = String(cleaned.dropLast(suffix.count))
+            if title.hasSuffix(suffix) {
+                title = String(title.dropLast(suffix.count))
                 break
             }
         }
-        return cleaned
+
+        // Read URL from the address bar
+        let url = readFirefoxURLFromAddressBar(appElement: appElement)
+
+        return BrowserTabInfo(title: title, url: url)
+    }
+
+    private static func readFirefoxURLFromAddressBar(
+        appElement: AXUIElement
+    ) -> String? {
+        // Get focused window's toolbar area — the address bar is near the top
+        var focusedWindow: AnyObject?
+        let winResult = AXUIElementCopyAttributeValue(
+            appElement, kAXFocusedWindowAttribute as CFString, &focusedWindow
+        )
+        guard winResult == .success, let window = focusedWindow else { return nil }
+
+        return findAddressBarValue(
+            element: window as! AXUIElement, depth: 0, maxDepth: 8
+        )
+    }
+
+    private static func findAddressBarValue(
+        element: AXUIElement, depth: Int, maxDepth: Int
+    ) -> String? {
+        guard depth < maxDepth else { return nil }
+
+        // Check if this element is the address bar
+        var roleValue: AnyObject?
+        AXUIElementCopyAttributeValue(
+            element, kAXRoleAttribute as CFString, &roleValue
+        )
+        let role = roleValue as? String ?? ""
+
+        if role == "AXTextField" || role == "AXComboBox" {
+            // Read description to confirm it's the address bar
+            var descValue: AnyObject?
+            AXUIElementCopyAttributeValue(
+                element, kAXDescriptionAttribute as CFString, &descValue
+            )
+            let desc = (descValue as? String ?? "").lowercased()
+
+            // Read the value
+            var valObj: AnyObject?
+            AXUIElementCopyAttributeValue(
+                element, kAXValueAttribute as CFString, &valObj
+            )
+            let value = valObj as? String ?? ""
+
+            let isAddressBar = desc.contains("address")
+                || desc.contains("search with")
+                || desc.contains("url")
+                || value.hasPrefix("http://")
+                || value.hasPrefix("https://")
+
+            if isAddressBar && !value.isEmpty {
+                return value
+            }
+        }
+
+        // Recurse into children
+        var childrenValue: AnyObject?
+        AXUIElementCopyAttributeValue(
+            element, kAXChildrenAttribute as CFString, &childrenValue
+        )
+        guard let children = childrenValue as? [AXUIElement] else { return nil }
+
+        for child in children {
+            if let url = findAddressBarValue(
+                element: child, depth: depth + 1, maxDepth: maxDepth
+            ) {
+                return url
+            }
+        }
+
+        return nil
     }
 
     // MARK: - App Detection
@@ -173,6 +252,9 @@ enum BrowserTabService {
             let title = json["title"] as? String ?? ""
             let fromRef = json["fromRef"] as? [String: Any]
             let sourceBranch = fromRef?["displayId"] as? String ?? ""
+            let author = json["author"] as? [String: Any]
+            let authorUser = author?["user"] as? [String: Any]
+            let creator = authorUser?["displayName"] as? String
 
             // Extract ticket from branch name first, then title
             let ticketID = extractTicketID(from: sourceBranch)
@@ -181,7 +263,8 @@ enum BrowserTabService {
             return BitbucketPRDetail(
                 title: title,
                 sourceBranch: sourceBranch,
-                ticketID: ticketID
+                ticketID: ticketID,
+                creator: creator
             )
         } catch {
             print("Bitbucket API error: \(error)")

@@ -199,6 +199,14 @@ final class ChromePlugin: TimeTrackingPlugin {
         if let url = tabInfo.url,
            let prRef = BrowserTabService.parseBitbucketPRURL(url) {
             let detail = await fetchOrCachePR(ref: prRef)
+            if let detail {
+                print(
+                    "[Chrome] Bitbucket PR: "
+                    + "title=\"\(detail.title)\" "
+                    + "branch=\(detail.sourceBranch) "
+                    + "creator=\(detail.creator ?? "unknown")"
+                )
+            }
             let ticketID = detail?.ticketID ?? "unassigned"
             return TicketResolution(
                 ticketID: ticketID, detectedFrom: "bitbucket"

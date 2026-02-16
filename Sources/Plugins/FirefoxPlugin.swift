@@ -15,13 +15,19 @@ final class FirefoxPlugin: TimeTrackingPlugin {
     private var deactivationObserver: NSObjectProtocol?
 
     private var currentEntryID: PersistentIdentifier?
-    private var lastTitle: String?
+    private var lastTabInfo: BrowserTabInfo?
     private var lastTicketID: String?
     private var entryStartTime: Date?
     private var isFirefoxActive = false
 
     private let pollInterval: TimeInterval = 5
     private let minimumDuration: TimeInterval = 10
+
+    // Bitbucket credentials cache
+    private var bbToken: String?
+    private var bbCredentialsLoaded = false
+    // Cache PR lookups to avoid repeated API calls
+    private var prCache: [String: BitbucketPRDetail] = [:]
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
@@ -40,6 +46,7 @@ final class FirefoxPlugin: TimeTrackingPlugin {
         }
 
         status = .active
+        loadBitbucketCredentials()
 
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
@@ -106,17 +113,17 @@ final class FirefoxPlugin: TimeTrackingPlugin {
         finalizeCurrentEntry()
     }
 
-    // MARK: - Title Polling
+    // MARK: - Tab Polling
 
     private func startPolling() {
         stopPolling()
-        pollTitle()
+        Task { await pollTab() }
 
         pollTimer = Timer.scheduledTimer(
             withTimeInterval: pollInterval, repeats: true
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.pollTitle()
+                await self?.pollTab()
             }
         }
     }
@@ -126,98 +133,129 @@ final class FirefoxPlugin: TimeTrackingPlugin {
         pollTimer = nil
     }
 
-    private func pollTitle() {
+    private func pollTab() async {
         guard isFirefoxActive else { return }
-        guard let title = BrowserTabService.readFirefoxWindowTitle() else {
-            print("[Firefox] Could not read window title")
+        guard let tabInfo = BrowserTabService.readFirefoxTab() else {
+            print("[Firefox] Could not read tab info")
             return
         }
 
-        let detectedFrom = detectSource(from: title)
-        let isRecognizedSource = detectedFrom == "bitbucket"
-            || detectedFrom == "jira"
-        let ticketID = BrowserTabService.extractTicketID(from: title)
-            ?? (isRecognizedSource ? "unassigned" : nil)
+        let resolution = await resolveTicket(tabInfo: tabInfo)
 
         print(
-            "[Firefox] title=\"\(title.prefix(80))\" "
-            + "ticket=\(ticketID ?? "none") "
-            + "source=\(detectedFrom) "
+            "[Firefox] title=\"\(tabInfo.title.prefix(80))\" "
+            + "url=\(tabInfo.url ?? "nil") "
+            + "ticket=\(resolution?.ticketID ?? "none") "
+            + "source=\(resolution?.detectedFrom ?? "none") "
             + "current=\(lastTicketID ?? "none") "
             + "entryID=\(currentEntryID != nil ? "yes" : "nil")"
         )
 
-        guard let ticketID else {
+        guard let resolution else {
             if currentEntryID != nil {
                 print("[Firefox] No ticket — finalizing current entry")
                 finalizeCurrentEntry()
             }
-            lastTitle = title
+            lastTabInfo = tabInfo
             lastTicketID = nil
             return
         }
 
-        // Check if ticket changed
-        if ticketID != lastTicketID {
+        if resolution.ticketID != lastTicketID {
             print(
                 "[Firefox] Ticket changed: "
-                + "\(lastTicketID ?? "none") → \(ticketID) "
-                + "(detectedFrom=\(detectedFrom))"
+                + "\(lastTicketID ?? "none") → \(resolution.ticketID) "
+                + "(detectedFrom=\(resolution.detectedFrom))"
             )
             finalizeCurrentEntry()
 
             let service = TimeEntryService(modelContainer: modelContainer)
             let metadata = buildMetadata(
-                title: title, detectedFrom: detectedFrom
+                tabInfo: tabInfo, detectedFrom: resolution.detectedFrom
             )
-            Task {
-                do {
-                    let entryID = try await service.create(
-                        applicationName: "Firefox",
-                        applicationBundleID: "org.mozilla.firefox",
-                        source: .firefox,
-                        startTime: Date(),
-                        sourcePluginID: "firefox",
-                        ticketID: ticketID,
-                        contextMetadata: metadata
-                    )
-                    currentEntryID = entryID
-                    entryStartTime = Date()
-                    print(
-                        "[Firefox] Created entry for \(ticketID)"
-                    )
-                } catch {
-                    print(
-                        "[Firefox] Failed to create entry: \(error)"
-                    )
-                }
+            do {
+                let entryID = try await service.create(
+                    applicationName: "Firefox",
+                    applicationBundleID: "org.mozilla.firefox",
+                    source: .firefox,
+                    startTime: Date(),
+                    sourcePluginID: "firefox",
+                    ticketID: resolution.ticketID,
+                    contextMetadata: metadata
+                )
+                currentEntryID = entryID
+                entryStartTime = Date()
+                print("[Firefox] Created entry for \(resolution.ticketID)")
+            } catch {
+                print("[Firefox] Failed to create entry: \(error)")
             }
         }
 
-        lastTitle = title
-        lastTicketID = ticketID
+        lastTabInfo = tabInfo
+        lastTicketID = resolution.ticketID
     }
 
-    /// Infer the detection source from the window title pattern
-    private func detectSource(from title: String) -> String {
-        let lower = title.lowercased()
-        // Bitbucket PR titles typically contain "pull request"
-        if lower.contains("pull request") || lower.contains("bitbucket") {
-            return "bitbucket"
-        }
-        // Jira titles typically end with "- Jira" or contain "Jira"
-        if lower.contains("jira") {
-            return "jira"
-        }
-        return "title"
+    // MARK: - Ticket Resolution
+
+    private struct TicketResolution {
+        let ticketID: String
+        let detectedFrom: String  // "jira", "bitbucket", or "title"
     }
 
-    private func buildMetadata(title: String, detectedFrom: String) -> String {
-        var parts: [String] = []
-        parts.append("\"pageTitle\":\"\(escapeJSON(title))\"")
-        parts.append("\"parsedFrom\":\"windowTitle\"")
-        parts.append("\"detectedFrom\":\"\(detectedFrom)\"")
-        return "{\(parts.joined(separator: ","))}"
+    private func resolveTicket(
+        tabInfo: BrowserTabInfo
+    ) async -> TicketResolution? {
+        // 1. Check Jira URL
+        if let url = tabInfo.url,
+           let ticket = BrowserTabService.extractJiraTicketFromURL(url) {
+            return TicketResolution(ticketID: ticket, detectedFrom: "jira")
+        }
+
+        // 2. Check Bitbucket PR URL
+        if let url = tabInfo.url,
+           let prRef = BrowserTabService.parseBitbucketPRURL(url) {
+            let detail = await fetchOrCachePR(ref: prRef)
+            if let detail {
+                print(
+                    "[Firefox] Bitbucket PR: "
+                    + "title=\"\(detail.title)\" "
+                    + "branch=\(detail.sourceBranch) "
+                    + "creator=\(detail.creator ?? "unknown")"
+                )
+            }
+            let ticketID = detail?.ticketID ?? "unassigned"
+            return TicketResolution(
+                ticketID: ticketID, detectedFrom: "bitbucket"
+            )
+        }
+
+        // 3. Try extracting ticket from page title
+        if let ticket = BrowserTabService.extractTicketID(
+            from: tabInfo.title
+        ) {
+            return TicketResolution(ticketID: ticket, detectedFrom: "title")
+        }
+
+        return nil
+    }
+
+    private func fetchOrCachePR(
+        ref: BitbucketPRRef
+    ) async -> BitbucketPRDetail? {
+        let cacheKey = "\(ref.projectKey)/\(ref.repoSlug)/\(ref.prNumber)"
+        if let cached = prCache[cacheKey] {
+            return cached
+        }
+
+        guard let token = bbToken else { return nil }
+
+        let detail = await BrowserTabService.fetchBitbucketPR(
+            ref: ref, token: token
+        )
+        if let detail {
+            prCache[cacheKey] = detail
+        }
+        return detail
     }
 
     // MARK: - Entry Management
@@ -227,7 +265,6 @@ final class FirefoxPlugin: TimeTrackingPlugin {
 
         if let start = entryStartTime,
            Date().timeIntervalSince(start) < minimumDuration {
-            // Delete short entry
             Task {
                 let context = ModelContext(modelContainer)
                 if let entry = context.model(for: entryID) as? TimeEntry {
@@ -247,6 +284,35 @@ final class FirefoxPlugin: TimeTrackingPlugin {
     }
 
     // MARK: - Helpers
+
+    private func loadBitbucketCredentials() {
+        guard !bbCredentialsLoaded else { return }
+        bbCredentialsLoaded = true
+
+        let context = ModelContext(modelContainer)
+        let bbType = IntegrationType.bitbucket
+        let predicate = #Predicate<IntegrationConfig> { $0.type == bbType }
+        let descriptor = FetchDescriptor<IntegrationConfig>(
+            predicate: predicate
+        )
+
+        if let config = try? context.fetch(descriptor).first,
+           config.isEnabled {
+            bbToken = KeychainService.retrieve(key: "bitbucket_token")
+        }
+    }
+
+    private func buildMetadata(
+        tabInfo: BrowserTabInfo, detectedFrom: String
+    ) -> String {
+        var parts: [String] = []
+        parts.append("\"pageTitle\":\"\(escapeJSON(tabInfo.title))\"")
+        if let url = tabInfo.url {
+            parts.append("\"pageURL\":\"\(escapeJSON(url))\"")
+        }
+        parts.append("\"detectedFrom\":\"\(detectedFrom)\"")
+        return "{\(parts.joined(separator: ","))}"
+    }
 
     private func escapeJSON(_ string: String) -> String {
         string
