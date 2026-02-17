@@ -84,49 +84,6 @@ actor TimeEntryService {
         try modelContext.save()
     }
 
-    func autoSave(entryID: PersistentIdentifier, currentTime: Date = Date()) throws {
-        guard let entry = modelContext.model(for: entryID) as? TimeEntry,
-              entry.isInProgress else { return }
-        entry.duration = currentTime.timeIntervalSince(entry.startTime)
-        try modelContext.save()
-    }
-
-    func splitAtMidnight(entryID: PersistentIdentifier) throws -> PersistentIdentifier? {
-        guard let entry = modelContext.model(for: entryID) as? TimeEntry else { return nil }
-
-        let calendar = Calendar.current
-        let startOfNextDay = calendar.startOfDay(
-            for: calendar.date(byAdding: .day, value: 1, to: entry.startTime)!
-        )
-
-        let endTime = entry.endTime ?? Date()
-
-        // Only split if entry crosses midnight
-        guard endTime > startOfNextDay else { return nil }
-
-        // Finalize first part at midnight
-        entry.endTime = startOfNextDay
-        entry.duration = startOfNextDay.timeIntervalSince(entry.startTime)
-        entry.isInProgress = false
-
-        // Create second part starting at midnight
-        let newEntry = TimeEntry(
-            startTime: startOfNextDay,
-            endTime: entry.isInProgress ? nil : endTime,
-            duration: endTime.timeIntervalSince(startOfNextDay),
-            source: entry.source,
-            isInProgress: entry.isInProgress,
-            todo: entry.todo,
-            applicationName: entry.applicationName,
-            applicationBundleID: entry.applicationBundleID,
-            label: entry.label
-        )
-        newEntry.bookingStatus = entry.bookingStatus
-        modelContext.insert(newEntry)
-        try modelContext.save()
-        return newEntry.persistentModelID
-    }
-
     func entries(for date: Date) throws -> [TimeEntry] {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: date)

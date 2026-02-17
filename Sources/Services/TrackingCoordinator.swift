@@ -27,12 +27,6 @@ final class TrackingCoordinator {
         }
     }
 
-    func stopTracking() {
-        Task {
-            await pluginManager?.stopAll()
-        }
-    }
-
     func syncPlugins() async {
         await pluginManager?.syncAll()
     }
