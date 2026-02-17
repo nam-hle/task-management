@@ -57,15 +57,6 @@ struct TaskManagementApp: App {
                 }
         }
         .modelContainer(modelContainer)
-        .commands {
-            CommandMenu("Tracking") {
-                Button("Toggle Tracking") {
-                    coordinator.startTracking()
-                }
-                .keyboardShortcut("t", modifiers: [.command])
-            }
-        }
-
         Settings {
             SettingsView()
                 .modelContainer(modelContainer)
@@ -73,6 +64,33 @@ struct TaskManagementApp: App {
                 .environment(\.jiraService, jiraService)
                 .environment(\.bitbucketService, bitbucketService)
                 .environment(\.logService, logService)
+        }
+
+        MenuBarExtra("Task Management", systemImage: "checklist.checked") {
+            Button("Open Task Management") {
+                NSApp.setActivationPolicy(.regular)
+                NSApp.activate(ignoringOtherApps: true)
+                if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.contains("main") ?? false }) {
+                    window.makeKeyAndOrderFront(nil)
+                } else {
+                    NSApp.windows.first?.makeKeyAndOrderFront(nil)
+                }
+            }
+            .keyboardShortcut("o", modifiers: [.command])
+
+            Divider()
+
+            SettingsLink {
+                Text("Settings...")
+            }
+            .keyboardShortcut(",", modifiers: [.command])
+
+            Divider()
+
+            Button("Quit") {
+                NSApplication.shared.terminate(nil)
+            }
+            .keyboardShortcut("q", modifiers: [.command])
         }
     }
 
