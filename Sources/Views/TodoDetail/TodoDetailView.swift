@@ -11,6 +11,10 @@ struct TodoDetailView: View {
     @State private var isEditingTitle = false
     @State private var editedTitle = ""
 
+    private var todoService: any TodoServiceProtocol {
+        serviceContainer!.makeTodoService(context: modelContext)
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -24,15 +28,13 @@ struct TodoDetailView: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 if todo.isTrashed {
                     Button {
-                        let service = serviceContainer!.makeTodoService(context: modelContext)
-                        service.restore(todo)
+                        todoService.restore(todo)
                     } label: {
                         Label("Restore", systemImage: "arrow.uturn.backward")
                     }
                 } else {
                     Button {
-                        let service = serviceContainer!.makeTodoService(context: modelContext)
-                        service.toggleComplete(todo)
+                        todoService.toggleComplete(todo)
                     } label: {
                         Label(
                             todo.isCompleted ? "Reopen" : "Complete",
@@ -42,8 +44,7 @@ struct TodoDetailView: View {
                     .keyboardShortcut(.return, modifiers: .command)
 
                     Button {
-                        let service = serviceContainer!.makeTodoService(context: modelContext)
-                        service.softDelete(todo)
+                        todoService.softDelete(todo)
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
@@ -99,8 +100,7 @@ struct TodoDetailView: View {
                 Picker("", selection: Binding(
                     get: { todo.priority },
                     set: { newValue in
-                        let service = serviceContainer!.makeTodoService(context: modelContext)
-                        service.update(todo, priority: newValue)
+                        todoService.update(todo, priority: newValue)
                     }
                 )) {
                     ForEach(Priority.allCases) { priority in
@@ -119,8 +119,7 @@ struct TodoDetailView: View {
                 Picker("", selection: Binding(
                     get: { todo.project },
                     set: { newValue in
-                        let service = serviceContainer!.makeTodoService(context: modelContext)
-                        service.update(todo, project: newValue)
+                        todoService.update(todo, project: newValue)
                     }
                 )) {
                     Text("None").tag(Project?.none)
@@ -146,22 +145,19 @@ struct TodoDetailView: View {
                 if let dueDate = Binding(
                     get: { todo.dueDate },
                     set: { newValue in
-                        let service = serviceContainer!.makeTodoService(context: modelContext)
-                        service.update(todo, dueDate: newValue)
+                        todoService.update(todo, dueDate: newValue)
                     }
                 ).wrappedValue {
                     DatePicker("", selection: Binding(
                         get: { dueDate },
                         set: { newValue in
-                            let service = serviceContainer!.makeTodoService(context: modelContext)
-                            service.update(todo, dueDate: newValue)
+                            todoService.update(todo, dueDate: newValue)
                         }
                     ), displayedComponents: .date)
                     .labelsHidden()
 
                     Button {
-                        let service = serviceContainer!.makeTodoService(context: modelContext)
-                        service.update(todo, dueDate: Optional<Date>.none)
+                        todoService.update(todo, dueDate: Optional<Date>.none)
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
@@ -169,8 +165,7 @@ struct TodoDetailView: View {
                     .buttonStyle(.plain)
                 } else {
                     Button("Set Due Date") {
-                        let service = serviceContainer!.makeTodoService(context: modelContext)
-                        service.update(todo, dueDate: Calendar.current.date(
+                        todoService.update(todo, dueDate: Calendar.current.date(
                             byAdding: .day, value: 1, to: Date()
                         ))
                     }
@@ -254,8 +249,7 @@ struct TodoDetailView: View {
     private func commitTitleEdit() {
         let trimmed = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
-            let service = serviceContainer!.makeTodoService(context: modelContext)
-            service.update(todo, title: trimmed)
+            todoService.update(todo, title: trimmed)
         }
         isEditingTitle = false
     }

@@ -11,6 +11,10 @@ struct TodoListView: View {
     @State private var newTodoTitle = ""
     @State private var errorMessage: String?
 
+    private var todoService: any TodoServiceProtocol {
+        serviceContainer!.makeTodoService(context: modelContext)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             SearchBar(text: $searchText)
@@ -58,27 +62,25 @@ struct TodoListView: View {
     }
 
     private var filteredTodos: [Todo] {
-        let service = serviceContainer!.makeTodoService(context: modelContext)
-
         do {
             switch filter {
             case .all:
-                return try service.list(
+                return try todoService.list(
                     isCompleted: false, searchText: searchText
                 )
             case .project(let project):
-                return try service.list(
+                return try todoService.list(
                     project: project, isCompleted: false, searchText: searchText
                 )
             case .completed:
-                return try service.list(
+                return try todoService.list(
                     isCompleted: true, searchText: searchText
                 )
             case .trash:
                 if searchText.isEmpty {
-                    return try service.listTrashed()
+                    return try todoService.listTrashed()
                 }
-                return try service.listTrashed().filter {
+                return try todoService.listTrashed().filter {
                     $0.title.localizedCaseInsensitiveContains(searchText)
                 }
             }
@@ -163,13 +165,12 @@ struct TodoListView: View {
             return
         }
 
-        let service = serviceContainer!.makeTodoService(context: modelContext)
         var project: Project? = nil
         if case .project(let p) = filter {
             project = p
         }
         do {
-            let todo = try service.create(title: title, project: project)
+            let todo = try todoService.create(title: title, project: project)
             selectedTodo = todo
         } catch {
             errorMessage = error.localizedDescription

@@ -18,6 +18,10 @@ struct SidebarView: View {
     @State private var newProjectName = ""
     @State private var errorMessage: String?
 
+    private var projectService: any ProjectServiceProtocol {
+        serviceContainer!.makeProjectService(context: modelContext)
+    }
+
     var body: some View {
         List(selection: $navigationSelection) {
             Section("Time Tracking") {
@@ -93,9 +97,8 @@ struct SidebarView: View {
             newProjectName = ""
             return
         }
-        let service = serviceContainer!.makeProjectService(context: modelContext)
         do {
-            _ = try service.create(name: name)
+            _ = try projectService.create(name: name)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -104,8 +107,7 @@ struct SidebarView: View {
     }
 
     private func deleteProject(_ project: Project) {
-        let service = serviceContainer!.makeProjectService(context: modelContext)
-        service.delete(project)
+        projectService.delete(project)
         if case .todos(.project(let selected)) = navigationSelection,
            selected.id == project.id {
             navigationSelection = .todos(.all)
