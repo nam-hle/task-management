@@ -104,7 +104,7 @@ struct TicketsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(assignedTickets.count) tickets")
                     .font(.headline)
-                Text(formatDuration(totalDuration))
+                Text(totalDuration.hoursMinutes)
                     .font(.system(.title, design: .monospaced))
                     .foregroundStyle(.primary)
             }
@@ -245,7 +245,7 @@ struct TicketsView: View {
             .font(.caption2)
             .foregroundStyle(.tertiary)
             Spacer()
-            Text(formatDuration(group.totalDuration))
+            Text(group.totalDuration.hoursMinutes)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.tertiary)
         }
@@ -275,7 +275,7 @@ struct TicketsView: View {
                     .font(.callout.bold())
                     .lineLimit(1)
                     .foregroundStyle(.secondary)
-                Text(formatDuration(ticket.totalDuration))
+                Text(ticket.totalDuration.hoursMinutes)
                     .font(.system(
                         .callout, design: .monospaced
                     ))
@@ -515,14 +515,4 @@ struct TicketsView: View {
         )
     }
 
-    // MARK: - Helpers
-
-    private func formatDuration(
-        _ interval: TimeInterval
-    ) -> String {
-        let totalSeconds = Int(interval)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        return String(format: "%dh %02dm", hours, minutes)
-    }
 }

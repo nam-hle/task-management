@@ -46,7 +46,7 @@ struct TimeEntryDetailView: View {
                     DatePicker("Start", selection: $startTime)
                     DatePicker("End", selection: $endTime)
                     LabeledContent("Duration") {
-                        Text(formatDuration(computedDuration))
+                        Text(computedDuration.hoursMinutesSeconds)
                             .font(.system(.body, design: .monospaced))
                     }
                 }
@@ -144,14 +144,4 @@ struct TimeEntryDetailView: View {
         .padding()
     }
 
-    private func formatDuration(_ interval: TimeInterval) -> String {
-        let totalSeconds = max(0, Int(interval))
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        let seconds = totalSeconds % 60
-        if hours > 0 {
-            return String(format: "%dh %02dm %02ds", hours, minutes, seconds)
-        }
-        return String(format: "%dm %02ds", minutes, seconds)
-    }
 }

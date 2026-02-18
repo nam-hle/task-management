@@ -12,7 +12,7 @@ struct TimeEntryRow: View {
                 Text(displayName)
                     .font(.headline)
                 HStack(spacing: 8) {
-                    Text(timeRange)
+                    Text(Formatters.timeRange(start: entry.startTime, end: entry.endTime))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(pluginLabel)
@@ -109,15 +109,6 @@ struct TimeEntryRow: View {
         return result
     }
 
-    private var timeRange: String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        let start = formatter.string(from: entry.startTime)
-        if let end = entry.endTime {
-            return "\(start) – \(formatter.string(from: end))"
-        }
-        return "\(start) – now"
-    }
 
     @ViewBuilder
     private var statusBadge: some View {

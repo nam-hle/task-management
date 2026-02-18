@@ -34,7 +34,7 @@ actor ExportService: ExportServiceProtocol {
 
         guard !entries.isEmpty else {
             return ExportResult(
-                formattedText: "No reviewed entries for \(formatDate(date)).",
+                formattedText: "No reviewed entries for \(Formatters.mediumDate.string(from: date)).",
                 entryIDs: [],
                 totalDuration: 0
             )
@@ -71,18 +71,18 @@ actor ExportService: ExportServiceProtocol {
 
         // Format output
         var lines: [String] = []
-        lines.append("Time Report: \(formatDate(date))")
+        lines.append("Time Report: \(Formatters.mediumDate.string(from: date))")
         lines.append(String(repeating: "─", count: 40))
         lines.append("")
 
         for group in groups {
-            let formatted = formatDuration(group.duration)
+            let formatted = group.duration.hoursMinutes
             lines.append("  \(formatted)  \(group.key)")
         }
 
         lines.append("")
         lines.append(String(repeating: "─", count: 40))
-        lines.append("  \(formatDuration(totalDuration))  Total")
+        lines.append("  \(totalDuration.hoursMinutes)  Total")
 
         let formattedText = lines.joined(separator: "\n")
         let entryIDs = entries.map(\.id)
@@ -146,18 +146,4 @@ actor ExportService: ExportServiceProtocol {
         try modelContext.save()
     }
 
-    // MARK: - Formatting
-
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter.string(from: date)
-    }
-
-    private func formatDuration(_ interval: TimeInterval) -> String {
-        let totalSeconds = Int(interval)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        return String(format: "%dh %02dm", hours, minutes)
-    }
 }

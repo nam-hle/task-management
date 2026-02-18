@@ -69,7 +69,7 @@ struct UnassignedTimeView: View {
 
             Spacer()
 
-            Text(formatDuration(totalDuration))
+            Text(totalDuration.hoursMinutes)
                 .font(.system(.callout, design: .monospaced))
                 .foregroundStyle(.secondary)
 
@@ -134,7 +134,7 @@ struct UnassignedTimeView: View {
 
                 Spacer()
 
-                Text(formatDuration(group.totalDuration))
+                Text(group.totalDuration.hoursMinutes)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
@@ -153,7 +153,7 @@ struct UnassignedTimeView: View {
 
                     Spacer()
 
-                    Text(formatDuration(branch.duration))
+                    Text(branch.duration.hoursMinutes)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
 
@@ -236,7 +236,7 @@ struct UnassignedTimeView: View {
 
             Spacer()
 
-            Text(formatDuration(group.totalDuration))
+            Text(group.totalDuration.hoursMinutes)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
         }
@@ -276,7 +276,7 @@ struct UnassignedTimeView: View {
                 Text(entryTitle(entry))
                     .font(.callout)
                     .lineLimit(1)
-                Text(timeRange(entry))
+                Text(Formatters.timeRange(start: entry.startTime, end: entry.endTime))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -444,24 +444,6 @@ struct UnassignedTimeView: View {
         return result
     }
 
-    private func timeRange(_ entry: TimeEntry) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        let start = formatter.string(from: entry.startTime)
-        if let end = entry.endTime {
-            return "\(start) – \(formatter.string(from: end))"
-        }
-        return "\(start) – now"
-    }
-
-    private func formatDuration(
-        _ interval: TimeInterval
-    ) -> String {
-        let totalSeconds = Int(interval)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        return String(format: "%dh %02dm", hours, minutes)
-    }
 }
 
 // MARK: - Entry Group

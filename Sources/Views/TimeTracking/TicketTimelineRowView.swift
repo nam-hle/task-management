@@ -21,7 +21,7 @@ struct TicketTimelineRowView: View {
                             ticketID: ticket.ticketID
                         )
                     Spacer()
-                    Text(formatDuration(ticket.totalDuration))
+                    Text(ticket.totalDuration.hoursMinutes)
                         .font(.system(
                             .callout, design: .monospaced
                         ))
@@ -106,12 +106,4 @@ struct TicketTimelineRowView: View {
         let width: CGFloat
     }
 
-    private func formatDuration(
-        _ interval: TimeInterval
-    ) -> String {
-        let totalSeconds = Int(interval)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        return String(format: "%dh %02dm", hours, minutes)
-    }
 }

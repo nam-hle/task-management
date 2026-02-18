@@ -67,7 +67,7 @@ struct TimeEntryListView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Time Entries")
                     .font(.headline)
-                Text(formatDuration(dailyTotal))
+                Text(dailyTotal.hoursMinutes)
                     .font(.system(.title, design: .monospaced))
                     .foregroundStyle(.primary)
             }
@@ -269,10 +269,4 @@ struct TimeEntryListView: View {
         }
     }
 
-    private func formatDuration(_ interval: TimeInterval) -> String {
-        let totalSeconds = Int(interval)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        return String(format: "%dh %02dm", hours, minutes)
-    }
 }

@@ -180,7 +180,7 @@ struct SourceDurationHoverModifier: ViewModifier {
                     Text(source.label)
                         .font(.callout)
                     Spacer()
-                    Text(formatDuration(source.duration))
+                    Text(source.duration.hoursMinutes)
                         .font(.system(
                             .callout, design: .monospaced
                         ))
@@ -192,14 +192,6 @@ struct SourceDurationHoverModifier: ViewModifier {
         .frame(width: 200)
     }
 
-    private func formatDuration(
-        _ interval: TimeInterval
-    ) -> String {
-        let totalSeconds = Int(interval)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        return String(format: "%dh %02dm", hours, minutes)
-    }
 }
 
 // MARK: - View Extensions

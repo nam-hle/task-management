@@ -14,7 +14,7 @@ struct GeneralSettingsView: View {
                 HStack {
                     Text("Idle timeout")
                     Spacer()
-                    Text(formatDuration(idleThreshold))
+                    Text(idleThreshold.settingsDuration)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
@@ -32,7 +32,7 @@ struct GeneralSettingsView: View {
                 HStack {
                     Text("Minimum switch duration")
                     Spacer()
-                    Text(formatDuration(minSwitchDuration))
+                    Text(minSwitchDuration.settingsDuration)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
@@ -50,7 +50,7 @@ struct GeneralSettingsView: View {
                 HStack {
                     Text("Save interval")
                     Spacer()
-                    Text(formatDuration(autoSaveInterval))
+                    Text(autoSaveInterval.settingsDuration)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
@@ -106,14 +106,4 @@ struct GeneralSettingsView: View {
         }
     }
 
-    private func formatDuration(_ seconds: Double) -> String {
-        let mins = Int(seconds) / 60
-        let secs = Int(seconds) % 60
-        if mins > 0 && secs > 0 {
-            return "\(mins)m \(secs)s"
-        } else if mins > 0 {
-            return "\(mins)m"
-        }
-        return "\(Int(seconds))s"
-    }
 }
