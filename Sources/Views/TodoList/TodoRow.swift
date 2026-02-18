@@ -5,11 +5,14 @@ struct TodoRow: View {
     @Environment(\.serviceContainer) private var serviceContainer
     let todo: Todo
 
+    private var todoService: any TodoServiceProtocol {
+        serviceContainer!.makeTodoService(context: modelContext)
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             Button {
-                let service = serviceContainer!.makeTodoService(context: modelContext)
-                service.toggleComplete(todo)
+                todoService.toggleComplete(todo)
             } label: {
                 Image(systemName: todo.isCompleted ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(todo.isCompleted ? .green : .secondary)
