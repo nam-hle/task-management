@@ -29,8 +29,11 @@ final class ChromePlugin: TimeTrackingPlugin {
     // Cache PR lookups to avoid repeated API calls
     private var prCache: [String: BitbucketPRDetail] = [:]
 
-    init(modelContainer: ModelContainer) {
+    private let logService: LogService?
+
+    init(modelContainer: ModelContainer, logService: LogService? = nil) {
         self.modelContainer = modelContainer
+        self.logService = logService
     }
 
     // MARK: - TimeTrackingPlugin
@@ -173,7 +176,10 @@ final class ChromePlugin: TimeTrackingPlugin {
                 currentEntryID = entryID
                 entryStartTime = Date()
             } catch {
-                print("Chrome plugin: Failed to create entry: \(error)")
+                logService?.log(
+                    "[Chrome] Failed to create entry: \(error)",
+                    level: .error
+                )
             }
         }
 
@@ -200,7 +206,7 @@ final class ChromePlugin: TimeTrackingPlugin {
            let prRef = BrowserTabService.parseBitbucketPRURL(url) {
             let detail = await fetchOrCachePR(ref: prRef)
             if let detail {
-                print(
+                logService?.log(
                     "[Chrome] Bitbucket PR: "
                     + "title=\"\(detail.title)\" "
                     + "branch=\(detail.sourceBranch) "
@@ -278,7 +284,7 @@ final class ChromePlugin: TimeTrackingPlugin {
 
         if let config = try? context.fetch(descriptor).first,
            config.isEnabled {
-            bbToken = KeychainService.retrieve(key: "bitbucket_token")
+            bbToken = try? KeychainService.retrieve(key: "bitbucket_token")
         }
     }
 

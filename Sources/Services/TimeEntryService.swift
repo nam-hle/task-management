@@ -77,7 +77,9 @@ actor TimeEntryService {
     }
 
     func finalize(entryID: PersistentIdentifier, endTime: Date = Date()) throws {
-        guard let entry = modelContext.model(for: entryID) as? TimeEntry else { return }
+        guard let entry = modelContext.model(for: entryID) as? TimeEntry else {
+            throw TimeEntryServiceError.entryNotFound
+        }
         entry.endTime = endTime
         entry.duration = endTime.timeIntervalSince(entry.startTime)
         entry.isInProgress = false
@@ -243,6 +245,7 @@ actor TimeEntryService {
     func markReviewed(entryIDs: [PersistentIdentifier]) throws {
         for entryID in entryIDs {
             guard let entry = modelContext.model(for: entryID) as? TimeEntry else {
+                print("Warning: Time entry not found for review: \(entryID)")
                 continue
             }
             if entry.bookingStatus == .unreviewed {
@@ -258,6 +261,7 @@ actor TimeEntryService {
     ) throws {
         for entryID in entryIDs {
             guard let entry = modelContext.model(for: entryID) as? TimeEntry else {
+                print("Warning: Time entry not found for ticket assignment: \(entryID)")
                 continue
             }
             entry.ticketID = ticketID
@@ -277,14 +281,18 @@ actor TimeEntryService {
                 && $0.isActive == true
         }
         let descriptor = FetchDescriptor<LearnedPattern>(predicate: predicate)
-        guard let pattern = try? modelContext.fetch(descriptor).first,
-              let todo = pattern.linkedTodo else { return }
+        do {
+            guard let pattern = try modelContext.fetch(descriptor).first,
+                  let todo = pattern.linkedTodo else { return }
 
-        entry.isAutoApproved = true
-        entry.learnedPattern = pattern
-        entry.todo = todo
-        entry.bookingStatus = .reviewed
-        try? modelContext.save()
+            entry.isAutoApproved = true
+            entry.learnedPattern = pattern
+            entry.todo = todo
+            entry.bookingStatus = .reviewed
+            try modelContext.save()
+        } catch {
+            print("[TimeEntry] Auto-approval check failed: \(error)")
+        }
     }
 
     func applyAutoApproval(
@@ -292,7 +300,9 @@ actor TimeEntryService {
         patternID: PersistentIdentifier,
         todoID: PersistentIdentifier
     ) throws {
-        guard let entry = modelContext.model(for: entryID) as? TimeEntry else { return }
+        guard let entry = modelContext.model(for: entryID) as? TimeEntry else {
+            throw TimeEntryServiceError.entryNotFound
+        }
         if let todo = modelContext.model(for: todoID) as? Todo {
             entry.todo = todo
         }

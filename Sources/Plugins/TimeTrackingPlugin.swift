@@ -20,6 +20,11 @@ extension TimeTrackingPlugin {
 @Observable
 final class PluginManager {
     private(set) var plugins: [any TimeTrackingPlugin] = []
+    private let logService: LogService?
+
+    init(logService: LogService? = nil) {
+        self.logService = logService
+    }
 
     func register(_ plugin: any TimeTrackingPlugin) {
         plugins.append(plugin)
@@ -31,7 +36,10 @@ final class PluginManager {
             do {
                 try await plugin.start()
             } catch {
-                print("Plugin \(plugin.id) failed to start: \(error)")
+                logService?.log(
+                    "Plugin \(plugin.id) failed to start: \(error)",
+                    level: .error
+                )
             }
         }
     }
@@ -41,7 +49,10 @@ final class PluginManager {
             do {
                 try await plugin.stop()
             } catch {
-                print("Plugin \(plugin.id) failed to stop: \(error)")
+                logService?.log(
+                    "Plugin \(plugin.id) failed to stop: \(error)",
+                    level: .error
+                )
             }
         }
     }
@@ -53,7 +64,10 @@ final class PluginManager {
         do {
             try await plugin.start()
         } catch {
-            print("Plugin \(pluginID) failed to start: \(error)")
+            logService?.log(
+                "Plugin \(pluginID) failed to start: \(error)",
+                level: .error
+            )
         }
     }
 
@@ -63,7 +77,10 @@ final class PluginManager {
         do {
             try await plugin.stop()
         } catch {
-            print("Plugin \(pluginID) failed to stop: \(error)")
+            logService?.log(
+                "Plugin \(pluginID) failed to stop: \(error)",
+                level: .error
+            )
         }
     }
 

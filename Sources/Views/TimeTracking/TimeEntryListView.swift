@@ -225,7 +225,11 @@ struct TimeEntryListView: View {
         for entry in entriesForDate where ids.contains(entry.persistentModelID) {
             entry.isExcluded.toggle()
         }
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
         selectedEntries.removeAll()
     }
 

@@ -116,3 +116,17 @@ enum IntegrationType: String, Codable, CaseIterable, Identifiable {
         }
     }
 }
+
+// MARK: - Validation Errors
+
+enum ValidationError: Error, LocalizedError {
+    case emptyName
+    case duplicateName(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyName: "Name cannot be empty"
+        case .duplicateName(let name): "'\(name)' already exists"
+        }
+    }
+}

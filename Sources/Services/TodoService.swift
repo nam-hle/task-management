@@ -15,7 +15,7 @@ struct TodoService {
         dueDate: Date? = nil,
         project: Project? = nil,
         tags: [Tag] = []
-    ) -> Todo {
+    ) throws -> Todo {
         let todo = Todo(
             title: title,
             descriptionText: descriptionText,
@@ -23,7 +23,7 @@ struct TodoService {
             dueDate: dueDate,
             project: project,
             tags: tags,
-            sortOrder: nextSortOrder(in: project)
+            sortOrder: try nextSortOrder(in: project)
         )
         context.insert(todo)
         return todo
@@ -71,23 +71,19 @@ struct TodoService {
         todo.updatedAt = Date()
     }
 
-    func purgeExpired() -> Int {
+    func purgeExpired() throws -> Int {
         let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
         let descriptor = FetchDescriptor<Todo>(
             predicate: #Predicate { todo in
                 todo.deletedAt != nil && todo.deletedAt! < cutoff
             }
         )
-        do {
-            let expired = try context.fetch(descriptor)
-            let count = expired.count
-            for todo in expired {
-                context.delete(todo)
-            }
-            return count
-        } catch {
-            return 0
+        let expired = try context.fetch(descriptor)
+        let count = expired.count
+        for todo in expired {
+            context.delete(todo)
         }
+        return count
     }
 
     func list(
@@ -97,7 +93,7 @@ struct TodoService {
         isCompleted: Bool? = nil,
         searchText: String = "",
         includeTrashed: Bool = false
-    ) -> [Todo] {
+    ) throws -> [Todo] {
         var descriptor = FetchDescriptor<Todo>(
             sortBy: [
                 SortDescriptor(\.sortOrder),
@@ -111,48 +107,44 @@ struct TodoService {
             (includeTrashed || todo.deletedAt == nil)
         }
 
-        do {
-            var results = try context.fetch(descriptor)
+        var results = try context.fetch(descriptor)
 
-            if let project {
-                let projectID = project.id
-                results = results.filter { $0.project?.id == projectID }
-            }
-
-            if let tag {
-                let tagID = tag.id
-                results = results.filter { todo in
-                    todo.tags.contains { $0.id == tagID }
-                }
-            }
-
-            if let priority {
-                results = results.filter { $0.priority == priority }
-            }
-
-            if let isCompleted {
-                results = results.filter { $0.isCompleted == isCompleted }
-            }
-
-            if !trimmedSearch.isEmpty {
-                results = results.filter { todo in
-                    todo.title.lowercased().contains(trimmedSearch)
-                        || todo.descriptionText.lowercased().contains(trimmedSearch)
-                }
-            }
-
-            return results
-        } catch {
-            return []
+        if let project {
+            let projectID = project.id
+            results = results.filter { $0.project?.id == projectID }
         }
+
+        if let tag {
+            let tagID = tag.id
+            results = results.filter { todo in
+                todo.tags.contains { $0.id == tagID }
+            }
+        }
+
+        if let priority {
+            results = results.filter { $0.priority == priority }
+        }
+
+        if let isCompleted {
+            results = results.filter { $0.isCompleted == isCompleted }
+        }
+
+        if !trimmedSearch.isEmpty {
+            results = results.filter { todo in
+                todo.title.lowercased().contains(trimmedSearch)
+                    || todo.descriptionText.lowercased().contains(trimmedSearch)
+            }
+        }
+
+        return results
     }
 
-    func listTrashed() -> [Todo] {
+    func listTrashed() throws -> [Todo] {
         let descriptor = FetchDescriptor<Todo>(
             predicate: #Predicate { $0.deletedAt != nil },
             sortBy: [SortDescriptor(\.deletedAt, order: .reverse)]
         )
-        return (try? context.fetch(descriptor)) ?? []
+        return try context.fetch(descriptor)
     }
 
     func reorder(_ todo: Todo, newSortOrder: Int) {
@@ -160,8 +152,8 @@ struct TodoService {
         todo.updatedAt = Date()
     }
 
-    private func nextSortOrder(in project: Project?) -> Int {
-        let todos = list(project: project, isCompleted: false)
+    private func nextSortOrder(in project: Project?) throws -> Int {
+        let todos = try list(project: project, isCompleted: false)
         return (todos.map(\.sortOrder).max() ?? -1) + 1
     }
 }

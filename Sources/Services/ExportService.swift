@@ -1,6 +1,11 @@
 import Foundation
 import SwiftData
 
+enum ExportServiceError: Error, LocalizedError {
+    case exportRecordNotFound
+    var errorDescription: String? { "Export record not found" }
+}
+
 struct ExportResult {
     let formattedText: String
     let entryIDs: [UUID]
@@ -125,7 +130,7 @@ actor ExportService {
 
     func markBooked(exportID: PersistentIdentifier) throws {
         guard let record = modelContext.model(for: exportID) as? ExportRecord else {
-            return
+            throw ExportServiceError.exportRecordNotFound
         }
         record.isBooked = true
         record.bookedAt = Date()

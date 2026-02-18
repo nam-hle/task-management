@@ -29,8 +29,11 @@ final class FirefoxPlugin: TimeTrackingPlugin {
     // Cache PR lookups to avoid repeated API calls
     private var prCache: [String: BitbucketPRDetail] = [:]
 
-    init(modelContainer: ModelContainer) {
+    private let logService: LogService?
+
+    init(modelContainer: ModelContainer, logService: LogService? = nil) {
         self.modelContainer = modelContainer
+        self.logService = logService
     }
 
     // MARK: - TimeTrackingPlugin
@@ -136,13 +139,13 @@ final class FirefoxPlugin: TimeTrackingPlugin {
     private func pollTab() async {
         guard isFirefoxActive else { return }
         guard let tabInfo = BrowserTabService.readFirefoxTab() else {
-            print("[Firefox] Could not read tab info")
+            logService?.log("[Firefox] Could not read tab info", level: .error)
             return
         }
 
         let resolution = await resolveTicket(tabInfo: tabInfo)
 
-        print(
+        logService?.log(
             "[Firefox] title=\"\(tabInfo.title.prefix(80))\" "
             + "url=\(tabInfo.url ?? "nil") "
             + "ticket=\(resolution?.ticketID ?? "none") "
@@ -153,7 +156,7 @@ final class FirefoxPlugin: TimeTrackingPlugin {
 
         guard let resolution else {
             if currentEntryID != nil {
-                print("[Firefox] No ticket — finalizing current entry")
+                logService?.log("[Firefox] No ticket — finalizing current entry")
                 finalizeCurrentEntry()
             }
             lastTabInfo = tabInfo
@@ -162,7 +165,7 @@ final class FirefoxPlugin: TimeTrackingPlugin {
         }
 
         if resolution.ticketID != lastTicketID {
-            print(
+            logService?.log(
                 "[Firefox] Ticket changed: "
                 + "\(lastTicketID ?? "none") → \(resolution.ticketID) "
                 + "(detectedFrom=\(resolution.detectedFrom))"
@@ -185,9 +188,12 @@ final class FirefoxPlugin: TimeTrackingPlugin {
                 )
                 currentEntryID = entryID
                 entryStartTime = Date()
-                print("[Firefox] Created entry for \(resolution.ticketID)")
+                logService?.log("[Firefox] Created entry for \(resolution.ticketID)")
             } catch {
-                print("[Firefox] Failed to create entry: \(error)")
+                logService?.log(
+                    "[Firefox] Failed to create entry: \(error)",
+                    level: .error
+                )
             }
         }
 
@@ -216,7 +222,7 @@ final class FirefoxPlugin: TimeTrackingPlugin {
            let prRef = BrowserTabService.parseBitbucketPRURL(url) {
             let detail = await fetchOrCachePR(ref: prRef)
             if let detail {
-                print(
+                logService?.log(
                     "[Firefox] Bitbucket PR: "
                     + "title=\"\(detail.title)\" "
                     + "branch=\(detail.sourceBranch) "
@@ -298,7 +304,7 @@ final class FirefoxPlugin: TimeTrackingPlugin {
 
         if let config = try? context.fetch(descriptor).first,
            config.isEnabled {
-            bbToken = KeychainService.retrieve(key: "bitbucket_token")
+            bbToken = try? KeychainService.retrieve(key: "bitbucket_token")
         }
     }
 

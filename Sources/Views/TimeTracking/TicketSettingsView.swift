@@ -56,7 +56,11 @@ struct TicketSettingsView: View {
                             Spacer()
                             Button {
                                 modelContext.delete(override)
-                                try? modelContext.save()
+                                do {
+                                    try modelContext.save()
+                                } catch {
+                                    overrideError = error.localizedDescription
+                                }
                             } label: {
                                 Image(systemName: "minus.circle.fill")
                                     .foregroundStyle(.red)
@@ -220,7 +224,11 @@ struct TicketSettingsView: View {
         override.priority = newPriority
 
         modelContext.insert(override)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            overrideError = error.localizedDescription
+        }
         resetOverrideForm()
     }
 

@@ -86,9 +86,17 @@ final class BitbucketService {
     private func loadCredentials() -> BitbucketCredentials? {
         let context = ModelContext(modelContainer)
         let descriptor = FetchDescriptor<IntegrationConfig>()
-        let configs = (try? context.fetch(descriptor)) ?? []
+        let configs: [IntegrationConfig]
+        do {
+            configs = try context.fetch(descriptor)
+        } catch {
+            logService?.log(
+                "Failed to fetch BB configs: \(error)", level: .error
+            )
+            return nil
+        }
 
-        let token = KeychainService.retrieve(key: "bitbucket_token")
+        let token = try? KeychainService.retrieve(key: "bitbucket_token")
         logService?.log(
             "BB keychain token present: \(token != nil && !token!.isEmpty)"
         )

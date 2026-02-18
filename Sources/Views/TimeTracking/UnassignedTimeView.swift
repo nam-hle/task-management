@@ -9,6 +9,7 @@ struct UnassignedTimeView: View {
     @State private var showBulkAssign = false
     @State private var bulkTicketInput = ""
     @State private var expandedGroups: Set<String> = []
+    @State private var errorMessage: String?
 
     private var groupedEntries: [EntryGroup] {
         var groups: [String: [TimeEntry]] = [:]
@@ -39,6 +40,14 @@ struct UnassignedTimeView: View {
         VStack(alignment: .leading, spacing: 8) {
             header
             groupList
+        }
+        .alert("Error", isPresented: .init(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
@@ -331,9 +340,13 @@ struct UnassignedTimeView: View {
             modelContainer: modelContext.container
         )
         Task {
-            try? await service.assignTicket(
-                entryIDs: ids, ticketID: trimmed
-            )
+            do {
+                try await service.assignTicket(
+                    entryIDs: ids, ticketID: trimmed
+                )
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
 
         selectedEntries.removeAll()
@@ -489,6 +502,7 @@ private struct AssignGroupButton: View {
 
     @State private var showPopover = false
     @State private var ticketInput = ""
+    @State private var errorMessage: String?
 
     var body: some View {
         Button {
@@ -499,6 +513,14 @@ private struct AssignGroupButton: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.mini)
+        .alert("Error", isPresented: .init(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
         .popover(isPresented: $showPopover) {
             VStack(spacing: 8) {
                 Text("Assign \(entryIDs.count) entries")
@@ -543,9 +565,13 @@ private struct AssignGroupButton: View {
             modelContainer: modelContext.container
         )
         Task {
-            try? await service.assignTicket(
-                entryIDs: entryIDs, ticketID: trimmed
-            )
+            do {
+                try await service.assignTicket(
+                    entryIDs: entryIDs, ticketID: trimmed
+                )
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
 
         ticketInput = ""
@@ -561,6 +587,7 @@ private struct AssignEntryButton: View {
 
     @State private var showPopover = false
     @State private var ticketInput = ""
+    @State private var errorMessage: String?
 
     var body: some View {
         Button {
@@ -571,6 +598,14 @@ private struct AssignEntryButton: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.mini)
+        .alert("Error", isPresented: .init(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
         .popover(isPresented: $showPopover) {
             VStack(spacing: 8) {
                 Text("Assign ticket")
@@ -616,10 +651,14 @@ private struct AssignEntryButton: View {
             modelContainer: modelContext.container
         )
         Task {
-            try? await service.assignTicket(
-                entryIDs: [entryID],
-                ticketID: trimmed
-            )
+            do {
+                try await service.assignTicket(
+                    entryIDs: [entryID],
+                    ticketID: trimmed
+                )
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
 
         ticketInput = ""

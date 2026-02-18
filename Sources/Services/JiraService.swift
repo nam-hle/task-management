@@ -146,10 +146,18 @@ final class JiraService {
 
         // Fetch all configs to debug
         let allDescriptor = FetchDescriptor<IntegrationConfig>()
-        let allConfigs = (try? context.fetch(allDescriptor)) ?? []
+        let allConfigs: [IntegrationConfig]
+        do {
+            allConfigs = try context.fetch(allDescriptor)
+        } catch {
+            logService?.log(
+                "Failed to fetch configs: \(error)", level: .error
+            )
+            return nil
+        }
         logService?.log("All configs: \(allConfigs.map { "type=\($0.type.rawValue) url=\($0.serverURL) enabled=\($0.isEnabled)" })")
 
-        let token = KeychainService.retrieve(key: "jira_token")
+        let token = try? KeychainService.retrieve(key: "jira_token")
         logService?.log("Keychain token present: \(token != nil && !token!.isEmpty)")
 
         guard let config = allConfigs.first(where: { $0.type == .jira && $0.isEnabled }),

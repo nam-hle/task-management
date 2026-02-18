@@ -70,6 +70,14 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .alert("Error", isPresented: .init(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
         .confirmationDialog(
             "Delete All Entries?",
             isPresented: $showDeleteConfirmation,
@@ -84,11 +92,16 @@ struct GeneralSettingsView: View {
     }
 
     @State private var showDeleteConfirmation = false
+    @State private var errorMessage: String?
 
     private func deleteAllEntries() {
         let service = TimeEntryService(modelContainer: modelContext.container)
         Task {
-            try? await service.deleteAll()
+            do {
+                try await service.deleteAll()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 

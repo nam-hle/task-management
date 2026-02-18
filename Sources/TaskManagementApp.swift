@@ -7,10 +7,10 @@ struct TaskManagementApp: App {
     let modelContainer: ModelContainer
 
     @State private var coordinator: TrackingCoordinator
-    @State private var pluginManager = PluginManager()
+    @State private var pluginManager: PluginManager
     @State private var jiraService: JiraService
     @State private var bitbucketService: BitbucketService
-    @State private var logService = LogService()
+    @State private var logService: LogService
 
     init() {
         do {
@@ -29,9 +29,12 @@ struct TaskManagementApp: App {
             let config = ModelConfiguration(isStoredInMemoryOnly: false)
             let container = try ModelContainer(for: schema, configurations: config)
             modelContainer = container
-            _coordinator = State(initialValue: TrackingCoordinator(modelContainer: container))
             let log = LogService()
             _logService = State(initialValue: log)
+            _coordinator = State(
+                initialValue: TrackingCoordinator(modelContainer: container, logService: log)
+            )
+            _pluginManager = State(initialValue: PluginManager(logService: log))
             _jiraService = State(initialValue: JiraService(modelContainer: container, logService: log))
             _bitbucketService = State(initialValue: BitbucketService(modelContainer: container, logService: log))
         } catch {
@@ -95,9 +98,15 @@ struct TaskManagementApp: App {
     }
 
     private func setupPlugins() {
-        let wakaPlugin = WakaTimePlugin(modelContainer: modelContainer, logService: logService)
-        let chromePlugin = ChromePlugin(modelContainer: modelContainer)
-        let firefoxPlugin = FirefoxPlugin(modelContainer: modelContainer)
+        let wakaPlugin = WakaTimePlugin(
+            modelContainer: modelContainer, logService: logService
+        )
+        let chromePlugin = ChromePlugin(
+            modelContainer: modelContainer, logService: logService
+        )
+        let firefoxPlugin = FirefoxPlugin(
+            modelContainer: modelContainer, logService: logService
+        )
 
         pluginManager.register(wakaPlugin)
         pluginManager.register(chromePlugin)

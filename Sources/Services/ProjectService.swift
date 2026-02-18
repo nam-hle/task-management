@@ -8,25 +8,34 @@ struct ProjectService {
         self.context = context
     }
 
-    func create(name: String, color: String = "#007AFF", descriptionText: String = "") -> Project? {
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        guard !nameExists(name) else { return nil }
+    func create(
+        name: String, color: String = "#007AFF", descriptionText: String = ""
+    ) throws -> Project {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ValidationError.emptyName }
+        guard try !nameExists(trimmed) else {
+            throw ValidationError.duplicateName(trimmed)
+        }
 
         let project = Project(
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            name: trimmed,
             color: color,
             descriptionText: descriptionText,
-            sortOrder: nextSortOrder()
+            sortOrder: try nextSortOrder()
         )
         context.insert(project)
         return project
     }
 
-    func update(_ project: Project, name: String? = nil, color: String? = nil,
-                descriptionText: String? = nil) {
+    func update(
+        _ project: Project, name: String? = nil, color: String? = nil,
+        descriptionText: String? = nil
+    ) throws {
         if let name {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty && (trimmed == project.name || !nameExists(trimmed)) {
+            let exists = trimmed == project.name ? false : try nameExists(trimmed)
+            let allowed = !trimmed.isEmpty && (trimmed == project.name || !exists)
+            if allowed {
                 project.name = trimmed
             }
         }
@@ -41,22 +50,22 @@ struct ProjectService {
         context.delete(project)
     }
 
-    func list() -> [Project] {
+    func list() throws -> [Project] {
         let descriptor = FetchDescriptor<Project>(
             sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.name)]
         )
-        return (try? context.fetch(descriptor)) ?? []
+        return try context.fetch(descriptor)
     }
 
-    private func nameExists(_ name: String) -> Bool {
+    private func nameExists(_ name: String) throws -> Bool {
         let lowered = name.lowercased()
         let descriptor = FetchDescriptor<Project>()
-        let all = (try? context.fetch(descriptor)) ?? []
+        let all = try context.fetch(descriptor)
         return all.contains { $0.name.lowercased() == lowered }
     }
 
-    private func nextSortOrder() -> Int {
-        let projects = list()
+    private func nextSortOrder() throws -> Int {
+        let projects = try list()
         return (projects.map(\.sortOrder).max() ?? -1) + 1
     }
 }

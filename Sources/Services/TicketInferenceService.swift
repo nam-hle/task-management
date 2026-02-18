@@ -23,8 +23,13 @@ enum TicketInferenceService {
         excludedProjects: Set<String>,
         unknownPatterns: [String]
     ) -> [TicketActivity] {
-        let compiledPatterns = unknownPatterns.compactMap { pattern in
-            try? Regex(pattern)
+        let compiledPatterns = unknownPatterns.compactMap { pattern -> Regex<AnyRegexOutput>? in
+            do {
+                return try Regex(pattern)
+            } catch {
+                print("[TicketInference] Invalid regex: \(pattern) — \(error)")
+                return nil
+            }
         }
 
         let overrideMap = Dictionary(
@@ -108,16 +113,26 @@ enum TicketInferenceService {
                 return override.ticketID
             }
             // Match by URL pattern
-            if let pageURL, let urlPattern = override.urlPattern, !urlPattern.isEmpty,
-               let regex = try? Regex(urlPattern),
-               pageURL.firstMatch(of: regex) != nil {
-                return override.ticketID
+            if let pageURL, let urlPattern = override.urlPattern, !urlPattern.isEmpty {
+                do {
+                    let regex = try Regex(urlPattern)
+                    if pageURL.firstMatch(of: regex) != nil {
+                        return override.ticketID
+                    }
+                } catch {
+                    print("[TicketInference] Invalid URL regex: \(urlPattern)")
+                }
             }
             // Match by app name pattern
-            if let appName, let appPattern = override.appNamePattern, !appPattern.isEmpty,
-               let regex = try? Regex(appPattern),
-               appName.firstMatch(of: regex) != nil {
-                return override.ticketID
+            if let appName, let appPattern = override.appNamePattern, !appPattern.isEmpty {
+                do {
+                    let regex = try Regex(appPattern)
+                    if appName.firstMatch(of: regex) != nil {
+                        return override.ticketID
+                    }
+                } catch {
+                    print("[TicketInference] Invalid app regex: \(appPattern)")
+                }
             }
         }
 

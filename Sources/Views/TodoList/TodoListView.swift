@@ -8,6 +8,7 @@ struct TodoListView: View {
     @State private var searchText = ""
     @State private var isAddingTodo = false
     @State private var newTodoTitle = ""
+    @State private var errorMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -34,6 +35,14 @@ struct TodoListView: View {
                 .listStyle(.inset)
             }
         }
+        .alert("Error", isPresented: .init(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -50,20 +59,31 @@ struct TodoListView: View {
     private var filteredTodos: [Todo] {
         let service = TodoService(context: modelContext)
 
-        switch filter {
-        case .all:
-            return service.list(isCompleted: false, searchText: searchText)
-        case .project(let project):
-            return service.list(project: project, isCompleted: false, searchText: searchText)
-        case .completed:
-            return service.list(isCompleted: true, searchText: searchText)
-        case .trash:
-            if searchText.isEmpty {
-                return service.listTrashed()
+        do {
+            switch filter {
+            case .all:
+                return try service.list(
+                    isCompleted: false, searchText: searchText
+                )
+            case .project(let project):
+                return try service.list(
+                    project: project, isCompleted: false, searchText: searchText
+                )
+            case .completed:
+                return try service.list(
+                    isCompleted: true, searchText: searchText
+                )
+            case .trash:
+                if searchText.isEmpty {
+                    return try service.listTrashed()
+                }
+                return try service.listTrashed().filter {
+                    $0.title.localizedCaseInsensitiveContains(searchText)
+                }
             }
-            return service.listTrashed().filter {
-                $0.title.localizedCaseInsensitiveContains(searchText)
-            }
+        } catch {
+            errorMessage = error.localizedDescription
+            return []
         }
     }
 
@@ -147,8 +167,12 @@ struct TodoListView: View {
         if case .project(let p) = filter {
             project = p
         }
-        let todo = service.create(title: title, project: project)
-        selectedTodo = todo
+        do {
+            let todo = try service.create(title: title, project: project)
+            selectedTodo = todo
+        } catch {
+            errorMessage = error.localizedDescription
+        }
         isAddingTodo = false
         newTodoTitle = ""
     }

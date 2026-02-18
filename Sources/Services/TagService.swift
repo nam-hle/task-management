@@ -8,22 +8,27 @@ struct TagService {
         self.context = context
     }
 
-    func create(name: String, color: String = "#8E8E93") -> Tag? {
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        guard !nameExists(name) else { return nil }
+    func create(name: String, color: String = "#8E8E93") throws -> Tag {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ValidationError.emptyName }
+        guard try !nameExists(trimmed) else {
+            throw ValidationError.duplicateName(trimmed)
+        }
 
         let tag = Tag(
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            name: trimmed,
             color: color
         )
         context.insert(tag)
         return tag
     }
 
-    func update(_ tag: Tag, name: String? = nil, color: String? = nil) {
+    func update(_ tag: Tag, name: String? = nil, color: String? = nil) throws {
         if let name {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty && (trimmed == tag.name || !nameExists(trimmed)) {
+            let exists = trimmed == tag.name ? false : try nameExists(trimmed)
+            let allowed = !trimmed.isEmpty && (trimmed == tag.name || !exists)
+            if allowed {
                 tag.name = trimmed
             }
         }
@@ -37,16 +42,16 @@ struct TagService {
         context.delete(tag)
     }
 
-    func list() -> [Tag] {
+    func list() throws -> [Tag] {
         let descriptor = FetchDescriptor<Tag>(
             sortBy: [SortDescriptor(\.name)]
         )
-        return (try? context.fetch(descriptor)) ?? []
+        return try context.fetch(descriptor)
     }
 
-    private func nameExists(_ name: String) -> Bool {
+    private func nameExists(_ name: String) throws -> Bool {
         let lowered = name.lowercased()
-        let all = list()
+        let all = try list()
         return all.contains { $0.name.lowercased() == lowered }
     }
 }

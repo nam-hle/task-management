@@ -16,6 +16,7 @@ struct IntegrationSettingsView: View {
 
     @State private var jiraSaveTask: Task<Void, Never>?
     @State private var bbSaveTask: Task<Void, Never>?
+    @State private var errorMessage: String?
 
     var body: some View {
         ScrollView {
@@ -47,6 +48,14 @@ struct IntegrationSettingsView: View {
                 Spacer()
             }
             .padding()
+        }
+        .alert("Error", isPresented: .init(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
         }
         .onChange(of: jiraURL) { debouncedSaveJira() }
         .onChange(of: jiraToken) { debouncedSaveJira() }
@@ -198,12 +207,12 @@ struct IntegrationSettingsView: View {
     private func loadSettings() {
         let jiraConfig = configs.first { $0.type == .jira }
         jiraURL = jiraConfig?.serverURL ?? ""
-        jiraToken = KeychainService.retrieve(key: "jira_token") ?? ""
+        jiraToken = (try? KeychainService.retrieve(key: "jira_token")) ?? ""
 
         let bbConfig = configs.first { $0.type == .bitbucket }
         bitbucketURL = bbConfig?.serverURL ?? ""
         bitbucketToken =
-            KeychainService.retrieve(key: "bitbucket_token") ?? ""
+            (try? KeychainService.retrieve(key: "bitbucket_token")) ?? ""
 
         if !jiraURL.isEmpty && !jiraToken.isEmpty {
             testJiraConnection()
@@ -220,9 +229,13 @@ struct IntegrationSettingsView: View {
             guard !Task.isCancelled else { return }
             saveConfig(type: .jira, url: jiraURL, username: "")
             if !jiraToken.isEmpty {
-                try? KeychainService.store(
-                    key: "jira_token", value: jiraToken
-                )
+                do {
+                    try KeychainService.store(
+                        key: "jira_token", value: jiraToken
+                    )
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }
@@ -236,9 +249,13 @@ struct IntegrationSettingsView: View {
                 type: .bitbucket, url: bitbucketURL, username: ""
             )
             if !bitbucketToken.isEmpty {
-                try? KeychainService.store(
-                    key: "bitbucket_token", value: bitbucketToken
-                )
+                do {
+                    try KeychainService.store(
+                        key: "bitbucket_token", value: bitbucketToken
+                    )
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }
@@ -421,7 +438,11 @@ struct IntegrationSettingsView: View {
             )
             modelContext.insert(config)
         }
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }
 

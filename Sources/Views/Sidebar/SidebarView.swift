@@ -15,6 +15,7 @@ struct SidebarView: View {
     @Binding var navigationSelection: NavigationItem?
     @State private var isAddingProject = false
     @State private var newProjectName = ""
+    @State private var errorMessage: String?
 
     var body: some View {
         List(selection: $navigationSelection) {
@@ -59,6 +60,14 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .alert("Error", isPresented: .init(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
         .toolbar {
             ToolbarItem {
                 Button {
@@ -84,7 +93,11 @@ struct SidebarView: View {
             return
         }
         let service = ProjectService(context: modelContext)
-        _ = service.create(name: name)
+        do {
+            _ = try service.create(name: name)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
         isAddingProject = false
         newProjectName = ""
     }

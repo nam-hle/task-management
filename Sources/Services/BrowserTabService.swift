@@ -267,7 +267,7 @@ enum BrowserTabService {
                 creator: creator
             )
         } catch {
-            print("Bitbucket API error: \(error)")
+            print("[BrowserTab] Bitbucket API error: \(error)")
             return nil
         }
     }

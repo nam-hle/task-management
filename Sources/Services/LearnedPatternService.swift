@@ -1,6 +1,11 @@
 import Foundation
 import SwiftData
 
+enum LearnedPatternServiceError: Error, LocalizedError {
+    case patternNotFound
+    var errorDescription: String? { "Learned pattern not found" }
+}
+
 @ModelActor
 actor LearnedPatternService {
     func findMatch(
@@ -58,7 +63,7 @@ actor LearnedPatternService {
 
     func revoke(patternID: PersistentIdentifier) throws {
         guard let pattern = modelContext.model(for: patternID) as? LearnedPattern else {
-            return
+            throw LearnedPatternServiceError.patternNotFound
         }
         pattern.isActive = false
         try modelContext.save()
