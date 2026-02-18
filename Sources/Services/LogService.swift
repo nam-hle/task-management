@@ -15,7 +15,7 @@ struct LogEntry: Identifiable {
 @MainActor @Observable
 final class LogService {
     private(set) var entries: [LogEntry] = []
-    private let maxEntries = 200
+    private var maxEntries: Int { AppConfig.maxLogEntries }
 
     func log(_ message: String, level: LogLevel = .info) {
         let entry = LogEntry(timestamp: Date(), message: message, level: level)

@@ -20,7 +20,7 @@ struct JiraTicketInfo: Identifiable {
 final class JiraService: JiraServiceProtocol {
     private var cache: [String: JiraTicketInfo] = [:]
     private var inFlight: [String: Task<JiraTicketInfo?, Never>] = [:]
-    private let cacheTTL: TimeInterval = 300
+    private var cacheTTL: TimeInterval { AppConfig.jiraCacheTTL }
     private(set) var projectNames: [String: String] = [:]
 
     private let modelContainer: ModelContainer

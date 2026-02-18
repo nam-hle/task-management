@@ -227,7 +227,7 @@ extension TimeEntryServiceProtocol {
         try finalize(entryID: entryID, endTime: endTime)
     }
 
-    func purgeExpired(retentionDays: Int = 90) throws -> Int {
+    func purgeExpired(retentionDays: Int = Int(AppConfig.Defaults.dataRetentionDays)) throws -> Int {
         try purgeExpired(retentionDays: retentionDays)
     }
 }

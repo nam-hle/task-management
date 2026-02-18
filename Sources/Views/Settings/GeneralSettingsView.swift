@@ -4,9 +4,22 @@ import SwiftData
 struct GeneralSettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.serviceContainer) private var serviceContainer
-    @AppStorage("idleThresholdSeconds") private var idleThreshold: Double = 300
-    @AppStorage("minimumSwitchDuration") private var minSwitchDuration: Double = 30
-    @AppStorage("autoSaveInterval") private var autoSaveInterval: Double = 60
+    @AppStorage(AppConfig.Keys.idleThresholdSeconds)
+    private var idleThreshold = AppConfig.Defaults.idleThresholdSeconds
+    @AppStorage(AppConfig.Keys.minimumSwitchDuration)
+    private var minSwitchDuration = AppConfig.Defaults.minimumSwitchDuration
+    @AppStorage(AppConfig.Keys.autoSaveInterval)
+    private var autoSaveInterval = AppConfig.Defaults.autoSaveInterval
+    @AppStorage(AppConfig.Keys.browserPollInterval)
+    private var browserPollInterval = AppConfig.Defaults.browserPollInterval
+    @AppStorage(AppConfig.Keys.browserMinDuration)
+    private var browserMinDuration = AppConfig.Defaults.browserMinDuration
+    @AppStorage(AppConfig.Keys.wakatimeSyncInterval)
+    private var wakatimeSyncInterval = AppConfig.Defaults.wakatimeSyncInterval
+    @AppStorage(AppConfig.Keys.dataRetentionDays)
+    private var dataRetentionDays = AppConfig.Defaults.dataRetentionDays
+    @AppStorage(AppConfig.Keys.todoPurgeDays)
+    private var todoPurgeDays = AppConfig.Defaults.todoPurgeDays
 
     var body: some View {
         Form {
@@ -63,6 +76,92 @@ struct GeneralSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
+            Section("Browser Plugins") {
+                HStack {
+                    Text("Poll interval")
+                    Spacer()
+                    Text(browserPollInterval.settingsDuration)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Slider(
+                    value: $browserPollInterval,
+                    in: 2...15,
+                    step: 1
+                )
+                Text("How often browser tabs are checked for ticket info.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+
+                HStack {
+                    Text("Minimum browsing duration")
+                    Spacer()
+                    Text(browserMinDuration.settingsDuration)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Slider(
+                    value: $browserMinDuration,
+                    in: 3...60,
+                    step: 1
+                )
+                Text("Browser entries shorter than this are discarded.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Section("WakaTime") {
+                HStack {
+                    Text("Sync interval")
+                    Spacer()
+                    Text(wakatimeSyncInterval.settingsDuration)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Slider(
+                    value: $wakatimeSyncInterval,
+                    in: 60...900,
+                    step: 30
+                )
+                Text("How often coding activity is fetched from WakaTime.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Section("Data Retention") {
+                HStack {
+                    Text("Time entry retention")
+                    Spacer()
+                    Text("\(Int(dataRetentionDays)) days")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Slider(
+                    value: $dataRetentionDays,
+                    in: 30...365,
+                    step: 1
+                )
+                Text("Booked time entries older than this are purged.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+
+                HStack {
+                    Text("Deleted todo retention")
+                    Spacer()
+                    Text("\(Int(todoPurgeDays)) days")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Slider(
+                    value: $todoPurgeDays,
+                    in: 7...90,
+                    step: 1
+                )
+                Text("Soft-deleted todos older than this are permanently removed.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
             Section("Data") {
                 Button("Delete All Time Entries", role: .destructive) {
                     showDeleteConfirmation = true

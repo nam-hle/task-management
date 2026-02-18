@@ -118,7 +118,7 @@ struct TaskManagementApp: App {
     private func purgeExpiredData() {
         let service = serviceContainer.makeTimeEntryService()
         Task {
-            if let count = try? await service.purgeExpired(), count > 0 {
+            if let count = try? await service.purgeExpired(retentionDays: AppConfig.dataRetentionDays), count > 0 {
                 logService.log("Purged \(count) expired records")
             }
         }

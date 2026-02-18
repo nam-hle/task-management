@@ -21,7 +21,7 @@ struct BitbucketPRInfo: Identifiable {
 final class BitbucketService: BitbucketServiceProtocol {
     private var cache: [String: BitbucketPRInfo] = [:]
     private var inFlight: [String: Task<BitbucketPRInfo?, Never>] = [:]
-    private let cacheTTL: TimeInterval = 86_400
+    private var cacheTTL: TimeInterval { AppConfig.bitbucketCacheTTL }
 
     private let modelContainer: ModelContainer
     private let logService: LogService?

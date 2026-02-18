@@ -316,7 +316,7 @@ actor TimeEntryService: TimeEntryServiceProtocol {
 
     // MARK: - Data Retention (Phase 9)
 
-    func purgeExpired(retentionDays: Int = 90) throws -> Int {
+    func purgeExpired(retentionDays: Int = Int(AppConfig.Defaults.dataRetentionDays)) throws -> Int {
         let cutoff = Calendar.current.date(
             byAdding: .day, value: -retentionDays, to: Date()
         )!

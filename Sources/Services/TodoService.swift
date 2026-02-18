@@ -72,7 +72,7 @@ struct TodoService: TodoServiceProtocol {
     }
 
     func purgeExpired() throws -> Int {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
+        let cutoff = Calendar.current.date(byAdding: .day, value: -AppConfig.todoPurgeDays, to: Date())!
         let descriptor = FetchDescriptor<Todo>(
             predicate: #Predicate { todo in
                 todo.deletedAt != nil && todo.deletedAt! < cutoff

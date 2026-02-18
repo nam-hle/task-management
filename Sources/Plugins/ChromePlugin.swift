@@ -20,8 +20,8 @@ final class ChromePlugin: TimeTrackingPlugin {
     private var entryStartTime: Date?
     private var isChromeActive = false
 
-    private let pollInterval: TimeInterval = 5
-    private let minimumDuration: TimeInterval = 10
+    private var pollInterval: TimeInterval { AppConfig.browserPollInterval }
+    private var minimumDuration: TimeInterval { AppConfig.browserMinDuration }
 
     // Bitbucket credentials cache
     private var bbToken: String?

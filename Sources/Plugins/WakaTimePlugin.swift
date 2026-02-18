@@ -14,7 +14,7 @@ final class WakaTimePlugin: TimeTrackingPlugin {
     private let logService: LogService?
     private let wakaTimeService = WakaTimeService()
     private var syncTimer: Timer?
-    private var syncInterval: TimeInterval = 300 // 5 minutes
+    private var syncInterval: TimeInterval { AppConfig.wakatimeSyncInterval }
 
     init(modelContainer: ModelContainer, logService: LogService? = nil) {
         self.modelContainer = modelContainer
