@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-struct TagService {
+struct TagService: TagServiceProtocol {
     private let context: ModelContext
 
     init(context: ModelContext) {

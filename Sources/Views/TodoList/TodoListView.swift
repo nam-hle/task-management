@@ -3,6 +3,7 @@ import SwiftData
 
 struct TodoListView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.serviceContainer) private var serviceContainer
     @Binding var selectedTodo: Todo?
     let filter: SidebarFilter
     @State private var searchText = ""
@@ -57,7 +58,7 @@ struct TodoListView: View {
     }
 
     private var filteredTodos: [Todo] {
-        let service = TodoService(context: modelContext)
+        let service = serviceContainer!.makeTodoService(context: modelContext)
 
         do {
             switch filter {
@@ -162,7 +163,7 @@ struct TodoListView: View {
             return
         }
 
-        let service = TodoService(context: modelContext)
+        let service = serviceContainer!.makeTodoService(context: modelContext)
         var project: Project? = nil
         if case .project(let p) = filter {
             project = p

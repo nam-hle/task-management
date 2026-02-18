@@ -3,6 +3,7 @@ import SwiftData
 
 struct TimeEntryListView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.serviceContainer) private var serviceContainer
     @Query(sort: \TimeEntry.startTime, order: .reverse)
     private var allEntries: [TimeEntry]
 
@@ -175,7 +176,7 @@ struct TimeEntryListView: View {
 
     private func mergeSelected() {
         let ids = Array(selectedEntries)
-        let service = TimeEntryService(modelContainer: modelContext.container)
+        let service = serviceContainer!.makeTimeEntryService()
         Task {
             do {
                 _ = try await service.merge(entryIDs: ids)
@@ -193,10 +194,8 @@ struct TimeEntryListView: View {
                 && $0.todo != nil
                 && $0.applicationBundleID != nil
         }
-        let service = TimeEntryService(modelContainer: modelContext.container)
-        let patternService = LearnedPatternService(
-            modelContainer: modelContext.container
-        )
+        let service = serviceContainer!.makeTimeEntryService()
+        let patternService = serviceContainer!.makeLearnedPatternService()
         Task {
             do {
                 try await service.markReviewed(entryIDs: ids)
@@ -235,7 +234,7 @@ struct TimeEntryListView: View {
 
     private func markAllReviewed() {
         let ids = entriesForDate.map(\.persistentModelID)
-        let service = TimeEntryService(modelContainer: modelContext.container)
+        let service = serviceContainer!.makeTimeEntryService()
         Task {
             do {
                 try await service.markReviewed(entryIDs: ids)
@@ -247,7 +246,7 @@ struct TimeEntryListView: View {
 
     private func saveChanges(for entry: TimeEntry, changes: TimeEntryChanges) {
         let entryID = entry.persistentModelID
-        let service = TimeEntryService(modelContainer: modelContext.container)
+        let service = serviceContainer!.makeTimeEntryService()
         Task {
             do {
                 try await service.update(entryID: entryID, changes: changes)
@@ -259,7 +258,7 @@ struct TimeEntryListView: View {
 
     private func splitEntry(_ entry: TimeEntry, at splitTime: Date) {
         let entryID = entry.persistentModelID
-        let service = TimeEntryService(modelContainer: modelContext.container)
+        let service = serviceContainer!.makeTimeEntryService()
         Task {
             do {
                 _ = try await service.split(entryID: entryID, at: splitTime)

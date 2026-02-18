@@ -2,19 +2,6 @@ import SwiftUI
 import SwiftData
 import AppKit
 
-// MARK: - Environment Key
-
-private struct JiraServiceKey: EnvironmentKey {
-    static let defaultValue: JiraService? = nil
-}
-
-extension EnvironmentValues {
-    var jiraService: JiraService? {
-        get { self[JiraServiceKey.self] }
-        set { self[JiraServiceKey.self] = newValue }
-    }
-}
-
 // MARK: - Ticket Hover Popover
 
 private let ticketIDPattern = #/^[A-Z][A-Z0-9]+-\d+$/#
@@ -22,7 +9,7 @@ private let ticketIDPattern = #/^[A-Z][A-Z0-9]+-\d+$/#
 struct JiraHoverModifier: ViewModifier {
     let ticketID: String
 
-    @Environment(\.jiraService) private var jiraService
+    @Environment(\.serviceContainer) private var serviceContainer
     @State private var isHovering = false
     @State private var ticketInfo: JiraTicketInfo?
     @State private var hoverTask: Task<Void, Never>?
@@ -35,7 +22,7 @@ struct JiraHoverModifier: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        if let service = jiraService, isValidTicket {
+        if let service = serviceContainer?.jiraService, isValidTicket {
             content
                 .onHover { hovering in
                     isHovering = hovering

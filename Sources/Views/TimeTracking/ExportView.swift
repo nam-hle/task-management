@@ -4,6 +4,7 @@ import AppKit
 
 struct ExportView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.serviceContainer) private var serviceContainer
 
     @State private var selectedDate = Date()
     @State private var exportResult: ExportResult?
@@ -149,7 +150,7 @@ struct ExportView: View {
         isGenerating = true
         exportRecordID = nil
         isCopied = false
-        let service = ExportService(modelContainer: modelContext.container)
+        let service = serviceContainer!.makeExportService()
         Task {
             do {
                 let result = try await service.generateExport(for: selectedDate)
@@ -179,7 +180,7 @@ struct ExportView: View {
     }
 
     private func confirmExport(_ result: ExportResult) {
-        let service = ExportService(modelContainer: modelContext.container)
+        let service = serviceContainer!.makeExportService()
         Task {
             do {
                 let recordID = try await service.confirmExport(result: result)
@@ -196,7 +197,7 @@ struct ExportView: View {
 
     private func markBooked() {
         guard let recordID = exportRecordID else { return }
-        let service = ExportService(modelContainer: modelContext.container)
+        let service = serviceContainer!.makeExportService()
         Task {
             do {
                 try await service.markBooked(exportID: recordID)

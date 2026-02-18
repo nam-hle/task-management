@@ -6,7 +6,7 @@ struct TicketTimelineRowView: View {
     let color: Color
     let selectedDate: Date
 
-    @Environment(\.jiraService) private var jiraService
+    @Environment(\.serviceContainer) private var serviceContainer
     @State private var summary: String?
 
     var body: some View {
@@ -67,7 +67,7 @@ struct TicketTimelineRowView: View {
         .padding(.vertical, 6)
         .task {
             guard summary == nil else { return }
-            let info = await jiraService?.ticketInfo(
+            let info = await serviceContainer?.jiraService?.ticketInfo(
                 for: ticket.ticketID
             )
             summary = info?.summary

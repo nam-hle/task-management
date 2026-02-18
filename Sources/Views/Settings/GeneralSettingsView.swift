@@ -3,6 +3,7 @@ import SwiftData
 
 struct GeneralSettingsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.serviceContainer) private var serviceContainer
     @AppStorage("idleThresholdSeconds") private var idleThreshold: Double = 300
     @AppStorage("minimumSwitchDuration") private var minSwitchDuration: Double = 30
     @AppStorage("autoSaveInterval") private var autoSaveInterval: Double = 60
@@ -95,7 +96,7 @@ struct GeneralSettingsView: View {
     @State private var errorMessage: String?
 
     private func deleteAllEntries() {
-        let service = TimeEntryService(modelContainer: modelContext.container)
+        let service = serviceContainer!.makeTimeEntryService()
         Task {
             do {
                 try await service.deleteAll()

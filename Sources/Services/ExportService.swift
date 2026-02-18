@@ -13,7 +13,7 @@ struct ExportResult {
 }
 
 @ModelActor
-actor ExportService {
+actor ExportService: ExportServiceProtocol {
     func generateExport(for date: Date) throws -> ExportResult {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: date)

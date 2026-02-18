@@ -10,6 +10,7 @@ enum SidebarFilter: Hashable {
 
 struct SidebarView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.serviceContainer) private var serviceContainer
     @Query(sort: \Project.sortOrder) private var projects: [Project]
     @Binding var selection: SidebarFilter?
     @Binding var navigationSelection: NavigationItem?
@@ -92,7 +93,7 @@ struct SidebarView: View {
             newProjectName = ""
             return
         }
-        let service = ProjectService(context: modelContext)
+        let service = serviceContainer!.makeProjectService(context: modelContext)
         do {
             _ = try service.create(name: name)
         } catch {
@@ -103,7 +104,7 @@ struct SidebarView: View {
     }
 
     private func deleteProject(_ project: Project) {
-        let service = ProjectService(context: modelContext)
+        let service = serviceContainer!.makeProjectService(context: modelContext)
         service.delete(project)
         if case .todos(.project(let selected)) = navigationSelection,
            selected.id == project.id {

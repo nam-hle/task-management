@@ -8,9 +8,8 @@ struct TaskManagementApp: App {
 
     @State private var coordinator: TrackingCoordinator
     @State private var pluginManager: PluginManager
-    @State private var jiraService: JiraService
-    @State private var bitbucketService: BitbucketService
     @State private var logService: LogService
+    @State private var serviceContainer: LiveServiceContainer
 
     init() {
         do {
@@ -35,8 +34,9 @@ struct TaskManagementApp: App {
                 initialValue: TrackingCoordinator(modelContainer: container, logService: log)
             )
             _pluginManager = State(initialValue: PluginManager(logService: log))
-            _jiraService = State(initialValue: JiraService(modelContainer: container, logService: log))
-            _bitbucketService = State(initialValue: BitbucketService(modelContainer: container, logService: log))
+            _serviceContainer = State(
+                initialValue: LiveServiceContainer(modelContainer: container, logService: log)
+            )
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }
@@ -46,8 +46,7 @@ struct TaskManagementApp: App {
         WindowGroup(id: "main") {
             ContentView()
                 .environment(coordinator)
-                .environment(\.jiraService, jiraService)
-                .environment(\.bitbucketService, bitbucketService)
+                .environment(\.serviceContainer, serviceContainer)
                 .environment(\.logService, logService)
                 .onAppear {
                     NSApp.setActivationPolicy(.regular)
@@ -64,8 +63,7 @@ struct TaskManagementApp: App {
             SettingsView()
                 .modelContainer(modelContainer)
                 .environment(coordinator)
-                .environment(\.jiraService, jiraService)
-                .environment(\.bitbucketService, bitbucketService)
+                .environment(\.serviceContainer, serviceContainer)
                 .environment(\.logService, logService)
         }
 
@@ -73,7 +71,9 @@ struct TaskManagementApp: App {
             Button("Open Task Management") {
                 NSApp.setActivationPolicy(.regular)
                 NSApp.activate(ignoringOtherApps: true)
-                if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.contains("main") ?? false }) {
+                if let window = NSApp.windows.first(where: {
+                    $0.identifier?.rawValue.contains("main") ?? false
+                }) {
                     window.makeKeyAndOrderFront(nil)
                 } else {
                     NSApp.windows.first?.makeKeyAndOrderFront(nil)
@@ -116,7 +116,7 @@ struct TaskManagementApp: App {
     }
 
     private func purgeExpiredData() {
-        let service = TimeEntryService(modelContainer: modelContainer)
+        let service = serviceContainer.makeTimeEntryService()
         Task {
             if let count = try? await service.purgeExpired(), count > 0 {
                 logService.log("Purged \(count) expired records")

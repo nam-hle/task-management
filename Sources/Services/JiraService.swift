@@ -17,7 +17,7 @@ struct JiraTicketInfo: Identifiable {
 }
 
 @MainActor @Observable
-final class JiraService {
+final class JiraService: JiraServiceProtocol {
     private var cache: [String: JiraTicketInfo] = [:]
     private var inFlight: [String: Task<JiraTicketInfo?, Never>] = [:]
     private let cacheTTL: TimeInterval = 300

@@ -2,12 +2,13 @@ import SwiftUI
 
 struct TodoRow: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.serviceContainer) private var serviceContainer
     let todo: Todo
 
     var body: some View {
         HStack(spacing: 10) {
             Button {
-                let service = TodoService(context: modelContext)
+                let service = serviceContainer!.makeTodoService(context: modelContext)
                 service.toggleComplete(todo)
             } label: {
                 Image(systemName: todo.isCompleted ? "checkmark.circle.fill" : "circle")

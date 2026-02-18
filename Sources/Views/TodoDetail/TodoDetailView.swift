@@ -3,6 +3,7 @@ import SwiftData
 
 struct TodoDetailView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.serviceContainer) private var serviceContainer
     @Bindable var todo: Todo
     @Query(sort: \Project.sortOrder) private var allProjects: [Project]
     @Query(sort: \Tag.name) private var allTags: [Tag]
@@ -23,14 +24,14 @@ struct TodoDetailView: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 if todo.isTrashed {
                     Button {
-                        let service = TodoService(context: modelContext)
+                        let service = serviceContainer!.makeTodoService(context: modelContext)
                         service.restore(todo)
                     } label: {
                         Label("Restore", systemImage: "arrow.uturn.backward")
                     }
                 } else {
                     Button {
-                        let service = TodoService(context: modelContext)
+                        let service = serviceContainer!.makeTodoService(context: modelContext)
                         service.toggleComplete(todo)
                     } label: {
                         Label(
@@ -41,7 +42,7 @@ struct TodoDetailView: View {
                     .keyboardShortcut(.return, modifiers: .command)
 
                     Button {
-                        let service = TodoService(context: modelContext)
+                        let service = serviceContainer!.makeTodoService(context: modelContext)
                         service.softDelete(todo)
                     } label: {
                         Label("Delete", systemImage: "trash")
@@ -98,7 +99,7 @@ struct TodoDetailView: View {
                 Picker("", selection: Binding(
                     get: { todo.priority },
                     set: { newValue in
-                        let service = TodoService(context: modelContext)
+                        let service = serviceContainer!.makeTodoService(context: modelContext)
                         service.update(todo, priority: newValue)
                     }
                 )) {
@@ -118,7 +119,7 @@ struct TodoDetailView: View {
                 Picker("", selection: Binding(
                     get: { todo.project },
                     set: { newValue in
-                        let service = TodoService(context: modelContext)
+                        let service = serviceContainer!.makeTodoService(context: modelContext)
                         service.update(todo, project: newValue)
                     }
                 )) {
@@ -145,21 +146,21 @@ struct TodoDetailView: View {
                 if let dueDate = Binding(
                     get: { todo.dueDate },
                     set: { newValue in
-                        let service = TodoService(context: modelContext)
+                        let service = serviceContainer!.makeTodoService(context: modelContext)
                         service.update(todo, dueDate: newValue)
                     }
                 ).wrappedValue {
                     DatePicker("", selection: Binding(
                         get: { dueDate },
                         set: { newValue in
-                            let service = TodoService(context: modelContext)
+                            let service = serviceContainer!.makeTodoService(context: modelContext)
                             service.update(todo, dueDate: newValue)
                         }
                     ), displayedComponents: .date)
                     .labelsHidden()
 
                     Button {
-                        let service = TodoService(context: modelContext)
+                        let service = serviceContainer!.makeTodoService(context: modelContext)
                         service.update(todo, dueDate: Optional<Date>.none)
                     } label: {
                         Image(systemName: "xmark.circle.fill")
@@ -168,7 +169,7 @@ struct TodoDetailView: View {
                     .buttonStyle(.plain)
                 } else {
                     Button("Set Due Date") {
-                        let service = TodoService(context: modelContext)
+                        let service = serviceContainer!.makeTodoService(context: modelContext)
                         service.update(todo, dueDate: Calendar.current.date(
                             byAdding: .day, value: 1, to: Date()
                         ))
@@ -253,7 +254,7 @@ struct TodoDetailView: View {
     private func commitTitleEdit() {
         let trimmed = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
-            let service = TodoService(context: modelContext)
+            let service = serviceContainer!.makeTodoService(context: modelContext)
             service.update(todo, title: trimmed)
         }
         isEditingTitle = false

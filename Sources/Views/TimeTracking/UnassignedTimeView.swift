@@ -5,6 +5,7 @@ struct UnassignedTimeView: View {
     let entries: [TimeEntry]
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.serviceContainer) private var serviceContainer
     @State private var selectedEntries: Set<PersistentIdentifier> = []
     @State private var showBulkAssign = false
     @State private var bulkTicketInput = ""
@@ -336,9 +337,7 @@ struct UnassignedTimeView: View {
         guard !trimmed.isEmpty else { return }
 
         let ids = Array(selectedEntries)
-        let service = TimeEntryService(
-            modelContainer: modelContext.container
-        )
+        let service = serviceContainer!.makeTimeEntryService()
         Task {
             do {
                 try await service.assignTicket(
@@ -500,6 +499,7 @@ private struct AssignGroupButton: View {
     let entryIDs: [PersistentIdentifier]
     let modelContext: ModelContext
 
+    @Environment(\.serviceContainer) private var serviceContainer
     @State private var showPopover = false
     @State private var ticketInput = ""
     @State private var errorMessage: String?
@@ -561,9 +561,7 @@ private struct AssignGroupButton: View {
             .trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
 
-        let service = TimeEntryService(
-            modelContainer: modelContext.container
-        )
+        let service = serviceContainer!.makeTimeEntryService()
         Task {
             do {
                 try await service.assignTicket(
@@ -585,6 +583,7 @@ private struct AssignEntryButton: View {
     let entry: TimeEntry
     let modelContext: ModelContext
 
+    @Environment(\.serviceContainer) private var serviceContainer
     @State private var showPopover = false
     @State private var ticketInput = ""
     @State private var errorMessage: String?
@@ -647,9 +646,7 @@ private struct AssignEntryButton: View {
         guard !trimmed.isEmpty else { return }
 
         let entryID = entry.persistentModelID
-        let service = TimeEntryService(
-            modelContainer: modelContext.container
-        )
+        let service = serviceContainer!.makeTimeEntryService()
         Task {
             do {
                 try await service.assignTicket(

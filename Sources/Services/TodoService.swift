@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-struct TodoService {
+struct TodoService: TodoServiceProtocol {
     private let context: ModelContext
 
     init(context: ModelContext) {

@@ -7,7 +7,7 @@ struct TicketsView: View {
     private var allEntries: [TimeEntry]
 
     @Environment(TrackingCoordinator.self) private var coordinator
-    @Environment(\.jiraService) private var jiraService
+    @Environment(\.serviceContainer) private var serviceContainer
 
     @State private var selectedDate = Date()
     @State private var refreshTick = 0
@@ -232,7 +232,7 @@ struct TicketsView: View {
     private func projectSectionHeader(
         group: ProjectGroup
     ) -> some View {
-        let name = jiraService?.projectName(
+        let name = serviceContainer?.jiraService?.projectName(
             for: group.projectKey
         ) ?? group.projectKey
         return HStack(spacing: 6) {

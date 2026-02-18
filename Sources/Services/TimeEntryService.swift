@@ -16,7 +16,7 @@ enum TimeEntryServiceError: Error, LocalizedError {
 }
 
 @ModelActor
-actor TimeEntryService {
+actor TimeEntryService: TimeEntryServiceProtocol {
     func create(
         todoID: PersistentIdentifier? = nil,
         applicationName: String? = nil,

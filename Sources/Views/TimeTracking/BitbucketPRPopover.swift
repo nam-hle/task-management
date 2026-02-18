@@ -1,18 +1,5 @@
 import SwiftUI
 
-// MARK: - Environment Key
-
-private struct BitbucketServiceKey: EnvironmentKey {
-    static let defaultValue: BitbucketService? = nil
-}
-
-extension EnvironmentValues {
-    var bitbucketService: BitbucketService? {
-        get { self[BitbucketServiceKey.self] }
-        set { self[BitbucketServiceKey.self] = newValue }
-    }
-}
-
 // MARK: - Popover View
 
 struct BitbucketPRPopover: View {
@@ -119,7 +106,7 @@ struct BitbucketPRPopover: View {
 struct BitbucketHoverModifier: ViewModifier {
     let prURL: String
 
-    @Environment(\.bitbucketService) private var bitbucketService
+    @Environment(\.serviceContainer) private var serviceContainer
     @Environment(\.logService) private var logService
     @State private var prInfo: BitbucketPRInfo?
     @State private var isHovering = false
@@ -132,7 +119,7 @@ struct BitbucketHoverModifier: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        if let service = bitbucketService, isValidURL {
+        if let service = serviceContainer?.bitbucketService, isValidURL {
             content
                 .onHover { hovering in
                     isHovering = hovering

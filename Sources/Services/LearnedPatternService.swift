@@ -7,7 +7,7 @@ enum LearnedPatternServiceError: Error, LocalizedError {
 }
 
 @ModelActor
-actor LearnedPatternService {
+actor LearnedPatternService: LearnedPatternServiceProtocol {
     func findMatch(
         contextType: String,
         identifier: String

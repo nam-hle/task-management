@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-struct ProjectService {
+struct ProjectService: ProjectServiceProtocol {
     private let context: ModelContext
 
     init(context: ModelContext) {

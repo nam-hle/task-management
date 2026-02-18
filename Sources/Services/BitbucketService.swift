@@ -18,7 +18,7 @@ struct BitbucketPRInfo: Identifiable {
 }
 
 @MainActor @Observable
-final class BitbucketService {
+final class BitbucketService: BitbucketServiceProtocol {
     private var cache: [String: BitbucketPRInfo] = [:]
     private var inFlight: [String: Task<BitbucketPRInfo?, Never>] = [:]
     private let cacheTTL: TimeInterval = 86_400

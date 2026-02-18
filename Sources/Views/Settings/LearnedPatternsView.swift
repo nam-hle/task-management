@@ -5,6 +5,7 @@ struct LearnedPatternsView: View {
     @Query(sort: \LearnedPattern.lastConfirmedAt, order: .reverse)
     private var patterns: [LearnedPattern]
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.serviceContainer) private var serviceContainer
 
     @State private var errorMessage: String?
 
@@ -121,9 +122,7 @@ struct LearnedPatternsView: View {
 
     private func revokePattern(_ pattern: LearnedPattern) {
         let patternID = pattern.persistentModelID
-        let service = LearnedPatternService(
-            modelContainer: modelContext.container
-        )
+        let service = serviceContainer!.makeLearnedPatternService()
         Task {
             do {
                 try await service.revoke(patternID: patternID)
