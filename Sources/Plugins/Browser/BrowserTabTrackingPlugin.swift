@@ -2,14 +2,41 @@ import Foundation
 import SwiftData
 import AppKit
 
+struct BrowserConfig {
+    let id: String
+    let displayName: String
+    let bundleID: String
+    let applicationName: String
+    let source: EntrySource
+
+    static let chrome = BrowserConfig(
+        id: "chrome",
+        displayName: "Chrome",
+        bundleID: "com.google.Chrome",
+        applicationName: "Google Chrome",
+        source: .chrome
+    )
+
+    static let firefox = BrowserConfig(
+        id: "firefox",
+        displayName: "Firefox",
+        bundleID: "org.mozilla.firefox",
+        applicationName: "Firefox",
+        source: .firefox
+    )
+}
+
 @MainActor
 @Observable
-final class ChromePlugin: TimeTrackingPlugin {
-    let id = "chrome"
-    let displayName = "Chrome"
+class BrowserTabTrackingPlugin: TimeTrackingPlugin {
+    let id: String
+    let displayName: String
     private(set) var status: PluginStatus = .inactive
 
-    private let modelContainer: ModelContainer
+    let config: BrowserConfig
+    let modelContainer: ModelContainer
+    let logService: LogService?
+
     private var pollTimer: Timer?
     private var activationObserver: NSObjectProtocol?
     private var deactivationObserver: NSObjectProtocol?
@@ -18,28 +45,37 @@ final class ChromePlugin: TimeTrackingPlugin {
     private var lastTabInfo: BrowserTabInfo?
     private var lastTicketID: String?
     private var entryStartTime: Date?
-    private var isChromeActive = false
+    private var isBrowserActive = false
 
     private var pollInterval: TimeInterval { AppConfig.browserPollInterval }
     private var minimumDuration: TimeInterval { AppConfig.browserMinDuration }
 
-    // Bitbucket credentials cache
     private var bbToken: String?
     private var bbCredentialsLoaded = false
-    // Cache PR lookups to avoid repeated API calls
     private var prCache: [String: BitbucketPRDetail] = [:]
 
-    private let logService: LogService?
-
-    init(modelContainer: ModelContainer, logService: LogService? = nil) {
+    init(
+        config: BrowserConfig,
+        modelContainer: ModelContainer,
+        logService: LogService? = nil
+    ) {
+        self.config = config
+        self.id = config.id
+        self.displayName = config.displayName
         self.modelContainer = modelContainer
         self.logService = logService
+    }
+
+    // MARK: - Override Point
+
+    func readCurrentTab() async -> BrowserTabInfo? {
+        fatalError("Subclasses must override readCurrentTab()")
     }
 
     // MARK: - TimeTrackingPlugin
 
     nonisolated func isAvailable() -> Bool {
-        BrowserTabService.isAppInstalled(bundleID: "com.google.Chrome")
+        BrowserTabService.isAppInstalled(bundleID: config.bundleID)
     }
 
     func start() async throws {
@@ -57,11 +93,13 @@ final class ChromePlugin: TimeTrackingPlugin {
             queue: .main
         ) { [weak self] notification in
             guard let self,
-                  let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
-                      as? NSRunningApplication,
-                  app.bundleIdentifier == "com.google.Chrome" else { return }
+                  let app = notification.userInfo?[
+                      NSWorkspace.applicationUserInfoKey
+                  ] as? NSRunningApplication,
+                  app.bundleIdentifier == self.config.bundleID
+            else { return }
             Task { @MainActor in
-                self.chromeActivated()
+                self.browserActivated()
             }
         }
 
@@ -71,18 +109,19 @@ final class ChromePlugin: TimeTrackingPlugin {
             queue: .main
         ) { [weak self] notification in
             guard let self,
-                  let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
-                      as? NSRunningApplication,
-                  app.bundleIdentifier == "com.google.Chrome" else { return }
+                  let app = notification.userInfo?[
+                      NSWorkspace.applicationUserInfoKey
+                  ] as? NSRunningApplication,
+                  app.bundleIdentifier == self.config.bundleID
+            else { return }
             Task { @MainActor in
-                self.chromeDeactivated()
+                self.browserDeactivated()
             }
         }
 
-        // Check if Chrome is already active
         if let front = NSWorkspace.shared.frontmostApplication,
-           front.bundleIdentifier == "com.google.Chrome" {
-            chromeActivated()
+           front.bundleIdentifier == config.bundleID {
+            browserActivated()
         }
     }
 
@@ -99,19 +138,19 @@ final class ChromePlugin: TimeTrackingPlugin {
             deactivationObserver = nil
         }
 
-        isChromeActive = false
+        isBrowserActive = false
         status = .inactive
     }
 
-    // MARK: - Chrome Activation
+    // MARK: - Browser Activation
 
-    private func chromeActivated() {
-        isChromeActive = true
+    private func browserActivated() {
+        isBrowserActive = true
         startPolling()
     }
 
-    private func chromeDeactivated() {
-        isChromeActive = false
+    private func browserDeactivated() {
+        isBrowserActive = false
         stopPolling()
         finalizeCurrentEntry()
     }
@@ -120,7 +159,6 @@ final class ChromePlugin: TimeTrackingPlugin {
 
     private func startPolling() {
         stopPolling()
-        // Poll immediately
         Task { await pollTab() }
 
         pollTimer = Timer.scheduledTimer(
@@ -138,15 +176,31 @@ final class ChromePlugin: TimeTrackingPlugin {
     }
 
     private func pollTab() async {
-        guard isChromeActive else { return }
-        guard let tabInfo = await BrowserTabService.readChromeTab() else { return }
+        let prefix = "[\(config.displayName)]"
+        guard isBrowserActive else { return }
+        guard let tabInfo = await readCurrentTab() else {
+            logService?.log(
+                "\(prefix) Could not read tab info", level: .error
+            )
+            return
+        }
 
         let resolution = await resolveTicket(tabInfo: tabInfo)
 
-        // Only create/update entry if we detected a Jira or Bitbucket page
+        logService?.log(
+            "\(prefix) title=\"\(tabInfo.title.prefix(80))\" "
+            + "url=\(tabInfo.url ?? "nil") "
+            + "ticket=\(resolution?.ticketID ?? "none") "
+            + "source=\(resolution?.detectedFrom ?? "none") "
+            + "current=\(lastTicketID ?? "none") "
+            + "entryID=\(currentEntryID != nil ? "yes" : "nil")"
+        )
+
         guard let resolution else {
-            // Not a Jira/Bitbucket page — finalize any existing entry
             if currentEntryID != nil {
+                logService?.log(
+                    "\(prefix) No ticket — finalizing current entry"
+                )
                 finalizeCurrentEntry()
             }
             lastTabInfo = tabInfo
@@ -154,30 +208,36 @@ final class ChromePlugin: TimeTrackingPlugin {
             return
         }
 
-        // Check if tab changed (different ticket or significantly different page)
         if resolution.ticketID != lastTicketID {
+            logService?.log(
+                "\(prefix) Ticket changed: "
+                + "\(lastTicketID ?? "none") → \(resolution.ticketID) "
+                + "(detectedFrom=\(resolution.detectedFrom))"
+            )
             finalizeCurrentEntry()
 
-            // Create new entry for this ticket
             let service = TimeEntryService(modelContainer: modelContainer)
             let metadata = buildMetadata(
                 tabInfo: tabInfo, detectedFrom: resolution.detectedFrom
             )
             do {
                 let entryID = try await service.create(
-                    applicationName: "Google Chrome",
-                    applicationBundleID: "com.google.Chrome",
-                    source: .chrome,
+                    applicationName: config.applicationName,
+                    applicationBundleID: config.bundleID,
+                    source: config.source,
                     startTime: Date(),
-                    sourcePluginID: "chrome",
+                    sourcePluginID: config.id,
                     ticketID: resolution.ticketID,
                     contextMetadata: metadata
                 )
                 currentEntryID = entryID
                 entryStartTime = Date()
+                logService?.log(
+                    "\(prefix) Created entry for \(resolution.ticketID)"
+                )
             } catch {
                 logService?.log(
-                    "[Chrome] Failed to create entry: \(error)",
+                    "\(prefix) Failed to create entry: \(error)",
                     level: .error
                 )
             }
@@ -191,23 +251,23 @@ final class ChromePlugin: TimeTrackingPlugin {
 
     private struct TicketResolution {
         let ticketID: String
-        let detectedFrom: String  // "jira", "bitbucket", or "title"
+        let detectedFrom: String
     }
 
-    private func resolveTicket(tabInfo: BrowserTabInfo) async -> TicketResolution? {
-        // 1. Check Jira URL
+    private func resolveTicket(
+        tabInfo: BrowserTabInfo
+    ) async -> TicketResolution? {
         if let url = tabInfo.url,
            let ticket = BrowserTabService.extractJiraTicketFromURL(url) {
             return TicketResolution(ticketID: ticket, detectedFrom: "jira")
         }
 
-        // 2. Check Bitbucket PR URL
         if let url = tabInfo.url,
            let prRef = BrowserTabService.parseBitbucketPRURL(url) {
             let detail = await fetchOrCachePR(ref: prRef)
             if let detail {
                 logService?.log(
-                    "[Chrome] Bitbucket PR: "
+                    "[\(config.displayName)] Bitbucket PR: "
                     + "title=\"\(detail.title)\" "
                     + "branch=\(detail.sourceBranch) "
                     + "creator=\(detail.creator ?? "unknown")"
@@ -219,15 +279,18 @@ final class ChromePlugin: TimeTrackingPlugin {
             )
         }
 
-        // 3. Try extracting ticket from page title
-        if let ticket = BrowserTabService.extractTicketID(from: tabInfo.title) {
+        if let ticket = BrowserTabService.extractTicketID(
+            from: tabInfo.title
+        ) {
             return TicketResolution(ticketID: ticket, detectedFrom: "title")
         }
 
         return nil
     }
 
-    private func fetchOrCachePR(ref: BitbucketPRRef) async -> BitbucketPRDetail? {
+    private func fetchOrCachePR(
+        ref: BitbucketPRRef
+    ) async -> BitbucketPRDetail? {
         let cacheKey = "\(ref.projectKey)/\(ref.repoSlug)/\(ref.prNumber)"
         if let cached = prCache[cacheKey] {
             return cached
@@ -249,10 +312,8 @@ final class ChromePlugin: TimeTrackingPlugin {
     private func finalizeCurrentEntry() {
         guard let entryID = currentEntryID else { return }
 
-        // Skip entries shorter than minimum duration
         if let start = entryStartTime,
            Date().timeIntervalSince(start) < minimumDuration {
-            // Delete short entry
             Task {
                 let context = ModelContext(self.modelContainer)
                 if let entry = context.model(for: entryID) as? TimeEntry {
@@ -263,7 +324,9 @@ final class ChromePlugin: TimeTrackingPlugin {
         } else {
             let service = TimeEntryService(modelContainer: modelContainer)
             Task {
-                try? await service.finalize(entryID: entryID, endTime: Date())
+                try? await service.finalize(
+                    entryID: entryID, endTime: Date()
+                )
             }
         }
 
@@ -279,12 +342,18 @@ final class ChromePlugin: TimeTrackingPlugin {
 
         let context = ModelContext(modelContainer)
         let bbType = IntegrationType.bitbucket
-        let predicate = #Predicate<IntegrationConfig> { $0.type == bbType }
-        let descriptor = FetchDescriptor<IntegrationConfig>(predicate: predicate)
+        let predicate = #Predicate<IntegrationConfig> {
+            $0.type == bbType
+        }
+        let descriptor = FetchDescriptor<IntegrationConfig>(
+            predicate: predicate
+        )
 
         if let config = try? context.fetch(descriptor).first,
            config.isEnabled {
-            bbToken = try? KeychainService.retrieve(key: "bitbucket_token")
+            bbToken = try? KeychainService.retrieve(
+                key: "bitbucket_token"
+            )
         }
     }
 
