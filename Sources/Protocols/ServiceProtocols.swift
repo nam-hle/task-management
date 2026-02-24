@@ -153,6 +153,16 @@ protocol TimeEntryServiceProtocol: Actor {
         contextMetadata: String?
     ) throws -> PersistentIdentifier
 
+    func upsertWakaTimeEntry(
+        ticketID: String?,
+        date: Date,
+        startTime: Date,
+        endTime: Date,
+        duration: TimeInterval,
+        applicationName: String?,
+        contextMetadata: String?
+    ) throws -> (id: PersistentIdentifier, isNew: Bool)
+
     func finalize(entryID: PersistentIdentifier, endTime: Date) throws
     func entries(for date: Date) throws -> [TimeEntry]
     func inProgressEntries() throws -> [TimeEntry]

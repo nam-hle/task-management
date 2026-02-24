@@ -76,7 +76,7 @@ struct TicketsView: View {
 
     private var totalDuration: TimeInterval {
         _ = refreshTick
-        return TicketAggregationService.deduplicatedDuration(
+        return TicketAggregationService.totalDuration(
             entries: entriesForDate
         )
     }
@@ -235,21 +235,27 @@ struct TicketsView: View {
         let name = serviceContainer?.jiraService?.projectName(
             for: group.projectKey
         ) ?? group.projectKey
-        return HStack(spacing: 6) {
-            Text(name)
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
-            Text(
-                "(\(group.tickets.count) ticket\(group.tickets.count == 1 ? "" : "s"))"
-            )
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-            Spacer()
-            Text(group.totalDuration.hoursMinutes)
-                .font(.system(.caption, design: .monospaced))
+        return HStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Text(name)
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                Text(
+                    "(\(group.tickets.count) ticket\(group.tickets.count == 1 ? "" : "s"))"
+                )
+                .font(.caption2)
                 .foregroundStyle(.tertiary)
+                Spacer()
+                Text(group.totalDuration.hoursMinutes)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(width: 260, alignment: .leading)
+            .padding(.leading, 8)
+            .padding(.trailing, 12)
+
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
         .padding(.top, 8)
         .padding(.bottom, 4)
     }

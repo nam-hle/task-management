@@ -92,9 +92,15 @@ final class WakaTimePlugin: TimeTrackingPlugin {
             "WakaTime: received \(branches.count) branches"
         )
 
-        var createdCount = 0
-        var updatedCount = 0
-        var skippedCount = 0
+        // Resolve tickets and aggregate by ticketID
+        struct TicketAccumulator {
+            var totalDuration: TimeInterval = 0
+            var earliestStart: Date = .distantFuture
+            var latestEnd: Date = .distantPast
+            var branches: [(project: String, branch: String, duration: TimeInterval)] = []
+        }
+
+        var ticketAccumulators: [String: TicketAccumulator] = [:]
 
         for branch in branches {
             if excludedProjects.contains(branch.project) {
@@ -104,92 +110,89 @@ final class WakaTimePlugin: TimeTrackingPlugin {
                 continue
             }
 
-            // Resolve ticket ID
             let ticketID = TicketInferenceService.resolveTicketID(
                 branch: branch.branch,
                 pageTitle: nil,
                 pageURL: nil,
                 appName: nil,
                 overrides: overrides
-            )
+            ) ?? "unassigned"
 
             let durationMin = String(
                 format: "%.1f", branch.totalDuration / 60
             )
             logService?.log(
                 "WakaTime: \(branch.project)/\(branch.branch)"
-                + " → \(ticketID ?? "unassigned")"
+                + " → \(ticketID)"
                 + " (\(durationMin)m, \(branch.segments.count) segments)"
             )
 
-            let metadata = "{\"project\":\"\(escapeJSON(branch.project))\",\"branch\":\"\(escapeJSON(branch.branch))\"}"
-
+            var acc = ticketAccumulators[ticketID] ?? TicketAccumulator()
+            acc.totalDuration += branch.totalDuration
+            acc.branches.append((
+                project: branch.project,
+                branch: branch.branch,
+                duration: branch.totalDuration
+            ))
             for segment in branch.segments {
-                do {
-                    // Check for existing entry overlap to avoid duplicates
-                    let existingEntries = try await service.entries(for: segment.start)
-                    let wakatimeSource = "wakatime"
-                    let overlapping = existingEntries.first { entry in
-                        entry.sourcePluginID == wakatimeSource
-                            && entry.startTime <= segment.end
-                            && (entry.endTime ?? Date()) >= segment.start
-                    }
-
-                    if let existing = overlapping {
-                        if existing.ticketID == nil, let ticketID {
-                            try await service.assignTicket(
-                                entryIDs: [existing.persistentModelID],
-                                ticketID: ticketID
-                            )
-                            updatedCount += 1
-                            logService?.log(
-                                "WakaTime:   ~ update"
-                                + " \(df.string(from: existing.startTime))"
-                                + "–\(df.string(from: existing.endTime ?? Date()))"
-                                + " → \(ticketID)"
-                            )
-                        } else {
-                            skippedCount += 1
-                            logService?.log(
-                                "WakaTime:   ~ skip"
-                                + " \(df.string(from: segment.start))"
-                                + "–\(df.string(from: segment.end))"
-                                + " (overlaps existing"
-                                + " \(df.string(from: existing.startTime))"
-                                + "–\(df.string(from: existing.endTime ?? Date()))"
-                                + " ticket=\(existing.ticketID ?? "nil"))"
-                            )
-                        }
-                    } else {
-                        _ = try await service.createFinalized(
-                            startTime: segment.start,
-                            endTime: segment.end,
-                            source: .wakatime,
-                            applicationName: branch.project,
-                            sourcePluginID: "wakatime",
-                            ticketID: ticketID,
-                            contextMetadata: metadata
-                        )
-                        createdCount += 1
-                        logService?.log(
-                            "WakaTime:   + entry"
-                            + " \(df.string(from: segment.start))"
-                            + "–\(df.string(from: segment.end))"
-                        )
-                    }
-                } catch {
-                    logService?.log(
-                        "WakaTime: failed to create entry — \(error)",
-                        level: .error
-                    )
+                if segment.start < acc.earliestStart {
+                    acc.earliestStart = segment.start
                 }
+                if segment.end > acc.latestEnd {
+                    acc.latestEnd = segment.end
+                }
+            }
+            ticketAccumulators[ticketID] = acc
+        }
+
+        // Create or update one entry per ticket
+        var createdCount = 0
+        var updatedCount = 0
+
+        for (ticketKey, acc) in ticketAccumulators {
+            let resolvedTicketID: String? = ticketKey == "unassigned"
+                ? nil : ticketKey
+
+            let branchesJSON = acc.branches.map {
+                "{\"project\":\"\(escapeJSON($0.project))\","
+                + "\"branch\":\"\(escapeJSON($0.branch))\","
+                + "\"duration\":\($0.duration)}"
+            }.joined(separator: ",")
+            let metadata = "{\"branches\":[\(branchesJSON)]}"
+
+            do {
+                let (_, isNew) = try await service.upsertWakaTimeEntry(
+                    ticketID: resolvedTicketID,
+                    date: acc.earliestStart,
+                    startTime: acc.earliestStart,
+                    endTime: acc.latestEnd,
+                    duration: acc.totalDuration,
+                    applicationName: acc.branches.first?.project,
+                    contextMetadata: metadata
+                )
+
+                if isNew {
+                    createdCount += 1
+                } else {
+                    updatedCount += 1
+                }
+                logService?.log(
+                    "WakaTime: \(isNew ? "+" : "~") \(ticketKey)"
+                    + " \(df.string(from: acc.earliestStart))"
+                    + "–\(df.string(from: acc.latestEnd))"
+                    + " \(String(format: "%.1f", acc.totalDuration / 60))m"
+                )
+            } catch {
+                logService?.log(
+                    "WakaTime: failed to store \(ticketKey) — \(error)",
+                    level: .error
+                )
             }
         }
 
         logService?.log(
             "WakaTime: sync done — \(createdCount) created,"
-            + " \(updatedCount) updated,"
-            + " \(skippedCount) skipped"
+            + " \(updatedCount) updated"
         )
 
         if status != .inactive {

@@ -94,6 +94,14 @@ actor MockTimeEntryService: TimeEntryServiceProtocol {
         fatalError("MockTimeEntryService.createFinalized not configured")
     }
 
+    func upsertWakaTimeEntry(
+        ticketID: String?, date: Date, startTime: Date,
+        endTime: Date, duration: TimeInterval,
+        applicationName: String?, contextMetadata: String?
+    ) throws -> (id: PersistentIdentifier, isNew: Bool) {
+        fatalError("MockTimeEntryService.upsertWakaTimeEntry not configured")
+    }
+
     func finalize(entryID: PersistentIdentifier, endTime: Date) throws {}
     func entries(for date: Date) throws -> [TimeEntry] { entriesToReturn }
     func inProgressEntries() throws -> [TimeEntry] { [] }

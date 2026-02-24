@@ -76,6 +76,55 @@ actor TimeEntryService: TimeEntryServiceProtocol {
         return entry.persistentModelID
     }
 
+    /// Find an existing WakaTime entry for the same ticket+day, or create one.
+    /// Returns `(id, isNew)`.
+    func upsertWakaTimeEntry(
+        ticketID: String?,
+        date: Date,
+        startTime: Date,
+        endTime: Date,
+        duration: TimeInterval,
+        applicationName: String?,
+        contextMetadata: String?
+    ) throws -> (id: PersistentIdentifier, isNew: Bool) {
+        let dayEntries = try entries(for: date)
+        let existing = dayEntries.first { entry in
+            entry.sourcePluginID == "wakatime"
+                && entry.ticketID == ticketID
+        }
+
+        if let existing {
+            existing.duration = duration
+            existing.endTime = endTime
+            existing.startTime = startTime
+            if let contextMetadata {
+                existing.contextMetadata = contextMetadata
+            }
+            try modelContext.save()
+            return (existing.persistentModelID, false)
+        }
+
+        guard duration > 0 else {
+            let id = try create(startTime: startTime)
+            return (id, true)
+        }
+        let entry = TimeEntry(
+            startTime: startTime,
+            endTime: endTime,
+            duration: duration,
+            source: .wakatime,
+            isInProgress: false,
+            applicationName: applicationName,
+            sourcePluginID: "wakatime",
+            ticketID: ticketID,
+            contextMetadata: contextMetadata
+        )
+        modelContext.insert(entry)
+        try modelContext.save()
+        checkAutoApproval(for: entry)
+        return (entry.persistentModelID, true)
+    }
+
     func finalize(entryID: PersistentIdentifier, endTime: Date = Date()) throws {
         guard let entry = modelContext.model(for: entryID) as? TimeEntry else {
             throw TimeEntryServiceError.entryNotFound

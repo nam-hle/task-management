@@ -33,15 +33,16 @@ enum TicketAggregationService {
         }
 
         var results: [TicketAggregate] = groups.map { ticketID, ticketEntries in
-            let rawDuration = ticketEntries.reduce(0.0) { $0 + $1.effectiveDuration }
-            let dedupDuration = deduplicatedDuration(entries: ticketEntries)
+            let totalDuration = ticketEntries.reduce(0.0) {
+                $0 + $1.effectiveDuration
+            }
             let breakdown = sourceBreakdown(entries: ticketEntries)
 
             return TicketAggregate(
                 id: ticketID,
                 ticketID: ticketID,
-                totalDuration: dedupDuration,
-                rawDuration: rawDuration,
+                totalDuration: totalDuration,
+                rawDuration: totalDuration,
                 entries: ticketEntries.sorted { $0.startTime < $1.startTime },
                 sourceBreakdown: breakdown
             )
@@ -57,35 +58,9 @@ enum TicketAggregationService {
         return results
     }
 
-    static func deduplicatedDuration(entries: [TimeEntry]) -> TimeInterval {
-        let intervals: [(start: Date, end: Date)] = entries.compactMap { entry in
-            let end = entry.endTime ?? Date()
-            guard end > entry.startTime else { return nil }
-            return (start: entry.startTime, end: end)
-        }
-        let merged = mergeIntervals(intervals)
-        return merged.reduce(0.0) { $0 + $1.end.timeIntervalSince($1.start) }
-    }
-
-    static func mergeIntervals(
-        _ intervals: [(start: Date, end: Date)]
-    ) -> [(start: Date, end: Date)] {
-        guard !intervals.isEmpty else { return [] }
-
-        let sorted = intervals.sorted { $0.start < $1.start }
-        var merged: [(start: Date, end: Date)] = [sorted[0]]
-
-        for interval in sorted.dropFirst() {
-            if interval.start <= merged[merged.count - 1].end {
-                // Overlapping — extend the end
-                let newEnd = max(merged[merged.count - 1].end, interval.end)
-                merged[merged.count - 1] = (start: merged[merged.count - 1].start, end: newEnd)
-            } else {
-                merged.append(interval)
-            }
-        }
-
-        return merged
+    static func totalDuration(entries: [TimeEntry]) -> TimeInterval {
+        entries.filter { !$0.isExcluded }
+            .reduce(0.0) { $0 + $1.effectiveDuration }
     }
 
     private static func sourceBreakdown(entries: [TimeEntry]) -> [SourceDuration] {
